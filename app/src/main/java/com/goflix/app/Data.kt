@@ -1,13 +1,31 @@
 package com.goflix.app
 
 import android.content.Context
+import android.graphics.Typeface
 import android.media.MediaPlayer
 import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.font.FontFamily
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+
+// ---- Live theme state (changed from Settings, applies instantly) ----
+var ACC by mutableStateOf(Color(0xFFE50914))
+var APP_NAME by mutableStateOf("GOFLIX")
+var LOGO_IMG by mutableStateOf("")
+var BG by mutableStateOf(Color.Black)
+var CARD by mutableStateOf(Color(0xFF1C1C1C))
+var RADIUS by mutableStateOf(8)
+var POSTER by mutableStateOf(120)
+var FONT by mutableStateOf<FontFamily>(FontFamily.Default)
 
 data class Profile(val id: String = UUID.randomUUID().toString(), val name: String, val avatar: String = "b:0", val kids: Boolean = false, val list: List<String> = emptyList())
 data class Video(val id: String = UUID.randomUUID().toString(), val title: String, val desc: String, val uri: String, val cover: String, val category: String = "My Videos", val added: Long = System.currentTimeMillis())
@@ -19,6 +37,29 @@ class Store(val ctx: Context) {
     private val sp = ctx.getSharedPreferences("goflix", 0)
     fun flag(k: String, d: Boolean = true) = sp.getBoolean(k, d)
     fun setFlag(k: String, v: Boolean) = sp.edit().putBoolean(k, v).apply()
+    fun str(k: String, d: String = "") = sp.getString(k, d) ?: d
+    fun put(k: String, v: String, persist: Boolean = true) { if (persist) sp.edit().putString(k, v).apply(); applyAll() }
+    fun pos(id: String) = sp.getLong("pos_$id", 0L)
+    fun dur(id: String) = sp.getLong("dur_$id", 0L)
+    fun savePos(id: String, p: Long, d: Long) = sp.edit().putLong("pos_$id", p).putLong("dur_$id", d).apply()
+    fun resetLook() {
+        val e = sp.edit(); listOf("name", "accent", "bg", "font", "radius", "poster", "logo").forEach { e.remove(it) }; e.apply(); applyAll()
+    }
+
+    fun applyAll() {
+        ACC = try { Color(android.graphics.Color.parseColor(str("accent", "#E50914"))) } catch (e: Exception) { Color(0xFFE50914) }
+        APP_NAME = str("name", "GOFLIX").ifBlank { "GOFLIX" }
+        LOGO_IMG = str("logo")
+        BG = when (str("bg", "black")) { "charcoal" -> Color(0xFF141414); "midnight" -> Color(0xFF0A0F1E); "wine" -> Color(0xFF14080B); else -> Color.Black }
+        CARD = lerp(BG, Color.White, 0.11f)
+        RADIUS = str("radius", "8").toIntOrNull() ?: 8
+        POSTER = str("poster", "120").toIntOrNull() ?: 120
+        FONT = when (val f = str("font", "default")) {
+            "default" -> FontFamily.Default; "sans" -> FontFamily.SansSerif; "serif" -> FontFamily.Serif
+            "mono" -> FontFamily.Monospace; "cursive" -> FontFamily.Cursive
+            else -> try { FontFamily(Typeface.createFromFile(File(f))) } catch (e: Exception) { FontFamily.Default }
+        }
+    }
 
     init {
         try {
@@ -36,6 +77,7 @@ class Store(val ctx: Context) {
                 }
             }
         } catch (e: Exception) { }
+        applyAll()
     }
 
     fun save() {
@@ -53,10 +95,18 @@ class Store(val ctx: Context) {
     fun toggleList(p: Profile, vid: String): Profile {
         val n = p.copy(list = if (vid in p.list) p.list - vid else p.list + vid); upsertProfile(n); return n
     }
-    fun copyImage(uri: Uri): String {
-        val f = File(ctx.filesDir, "img_${UUID.randomUUID()}.jpg")
+    fun copyImage(uri: Uri): String = copyFile(uri, "img")
+    fun copyFile(uri: Uri, prefix: String): String {
+        val ext = displayName(uri.toString()).substringAfterLast('.', "bin")
+        val f = File(ctx.filesDir, "${prefix}_${UUID.randomUUID()}.$ext")
         ctx.contentResolver.openInputStream(uri)!!.use { i -> f.outputStream().use { o -> i.copyTo(o) } }
         return f.path
+    }
+    fun displayName(uri: String): String {
+        var n = "file"
+        try { ctx.contentResolver.query(Uri.parse(uri), null, null, null, null)?.use { c ->
+            val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME); if (c.moveToFirst() && i >= 0) n = c.getString(i) } } catch (e: Exception) { }
+        return n
     }
     fun downloadImage(url: String, done: (String?) -> Unit) {
         Thread {
@@ -71,12 +121,15 @@ class Store(val ctx: Context) {
 
 object Sfx {
     private var amb: MediaPlayer? = null
-    fun play(c: Context, res: Int, vol: Float = 1f) {
-        MediaPlayer.create(c, res)?.apply { setVolume(vol, vol); setOnCompletionListener { it.release() }; start() }
+    private fun mk(c: Context, res: Int, path: String): MediaPlayer? = try {
+        if (path.isNotEmpty() && File(path).exists()) MediaPlayer().apply { setDataSource(path); prepare() } else MediaPlayer.create(c, res)
+    } catch (e: Exception) { MediaPlayer.create(c, res) }
+    fun play(c: Context, res: Int, path: String = "", vol: Float = 1f) {
+        mk(c, res, path)?.apply { setVolume(vol, vol); setOnCompletionListener { it.release() }; start() }
     }
-    fun ambient(c: Context, on: Boolean) {
+    fun ambient(c: Context, on: Boolean, path: String = "") {
         amb?.release(); amb = null
-        if (on) amb = MediaPlayer.create(c, R.raw.ambient)?.apply { isLooping = true; setVolume(.25f, .25f); start() }
+        if (on) amb = mk(c, R.raw.ambient, path)?.apply { isLooping = true; setVolume(.3f, .3f); start() }
     }
     fun pause() { try { amb?.pause() } catch (e: Exception) { } }
     fun resume() { try { amb?.start() } catch (e: Exception) { } }
