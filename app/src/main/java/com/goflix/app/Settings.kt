@@ -74,16 +74,18 @@ fun Chip(label: String, on: Boolean, ff: FontFamily = FONT, onClick: () -> Unit)
 fun SettingsScreen(st: Store, p: Profile, switch: () -> Unit) {
     val ctx = LocalContext.current
     var confirm by remember { mutableStateOf(false) }
+    var labelsReset by remember { mutableStateOf(0) }
     var name by remember { mutableStateOf(st.str("name", "GOFLIX")) }
     var hex by remember { mutableStateOf(st.str("accent", "#E50914")) }
     var radius by remember { mutableStateOf(RADIUS.toFloat()) }
     var poster by remember { mutableStateOf(POSTER.toFloat()) }
+    var speed by remember { mutableStateOf(ANIM_SPEED) }
     val logoPick = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { u -> u?.let { st.put("logo", st.copyImage(it)) } }
     val fontPick = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { u -> u?.let { st.put("font", st.copyFile(it, "font")) } }
     val font = st.str("font", "default")
 
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp)) {
-        Text("Settings", fontSize = 30.sp, fontWeight = FontWeight.Black)
+        Text(L("settings", "Settings"), fontSize = 30.sp, fontWeight = FontWeight.Black)
         Row(Modifier.padding(top = 16.dp).fillMaxWidth().clip(RoundedCornerShape(RADIUS.dp)).background(CARD).clickable(onClick = switch).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Avatar(p.avatar, 52.dp)
             Column(Modifier.padding(start = 14.dp).weight(1f)) { Text(p.name, fontSize = 18.sp, fontWeight = FontWeight.Bold); Text("Switch or manage profiles", color = Color.Gray, fontSize = 13.sp) }
@@ -118,6 +120,26 @@ fun SettingsScreen(st: Store, p: Profile, switch: () -> Unit) {
         Text("Poster size: ${poster.toInt()}", color = Color.Gray, fontSize = 13.sp)
         Slider(poster, { poster = it; POSTER = it.toInt() }, valueRange = 90f..170f, onValueChangeFinished = { st.put("poster", poster.toInt().toString()) }, colors = SliderDefaults.colors(thumbColor = ACC, activeTrackColor = ACC))
 
+        Section("Home & search")
+        Toggle(st, "searchGrid", "Letter grid on search", "On-screen a–z keypad like Netflix TV")
+        Toggle(st, "showUpload", "Show Upload", "Turn off to hide the Upload tab, Edit and Delete")
+
+        Section("Animations")
+        Toggle(st, "anim", "Animations", "Master switch for all motion")
+        Toggle(st, "animPop", "Poster press effect", "Posters shrink slightly when tapped")
+        Toggle(st, "animStagger", "Row entrance", "Rows and profiles fade in one after another")
+        Toggle(st, "animHero", "Hero slow zoom", "Slow zoom on the big home banner")
+        Text("Speed: ${"%.1f".format(speed)}x", Modifier.padding(top = 8.dp), color = Color.Gray, fontSize = 13.sp)
+        Slider(speed, { speed = it; ANIM_SPEED = it }, valueRange = 0.5f..2.5f, onValueChangeFinished = { st.put("animSpeed", speed.toString()) }, colors = SliderDefaults.colors(thumbColor = ACC, activeTrackColor = ACC))
+        Text("Screen transition", Modifier.padding(top = 8.dp, bottom = 8.dp), color = Color.Gray, fontSize = 13.sp)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(listOf("slide" to "Slide", "fade" to "Fade", "scale" to "Zoom", "none" to "None")) { (k, l) -> Chip(l, ANIM_STYLE == k) { st.put("animStyle", k) } }
+        }
+
+        Section("Names & labels")
+        Text("Rename anything shown on the home, search and profile screens.", color = Color.Gray, fontSize = 12.sp)
+        LABELS.forEach { (k, title, def) -> key(labelsReset) { LabelField(st, k, title, def) } }
+
         Section("Intro & sounds")
         Toggle(st, "intro", "Play intro on launch", "Shown every time the app opens")
         Toggle(st, "sound", "Sound effects", "Master switch for all sounds")
@@ -129,7 +151,7 @@ fun SettingsScreen(st: Store, p: Profile, switch: () -> Unit) {
 
         Section("Library")
         OutlinedButton({ confirm = true }, Modifier.fillMaxWidth(), shape = RoundedCornerShape(RADIUS.dp)) { Text("Remove all videos from app", color = ACC) }
-        OutlinedButton({ st.resetLook(); name = "GOFLIX"; hex = "#E50914"; radius = 8f; poster = 120f }, Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(RADIUS.dp)) { Text("Reset appearance to default", color = Color.White) }
+        OutlinedButton({ st.resetLook(); name = "GOFLIX"; hex = "#E50914"; radius = 8f; poster = 120f; labelsReset++ }, Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(RADIUS.dp)) { Text("Reset appearance to default", color = Color.White) }
         Text("$APP_NAME  ·  v1.0", Modifier.padding(top = 24.dp, bottom = 12.dp), color = Color.Gray, fontSize = 12.sp)
     }
     if (confirm) AlertDialog(onDismissRequest = { confirm = false }, containerColor = Color(0xFF1A1A1A),
@@ -148,4 +170,11 @@ fun FileRow2(st: Store, title: String, sub: String, logoPick: () -> Unit, clear:
         if (LOGO_IMG.isNotEmpty()) TextButton(clear) { Text("Reset", color = Color.Gray) }
         OutlinedButton(logoPick, shape = RoundedCornerShape(RADIUS.dp)) { Text(if (LOGO_IMG.isEmpty()) "Add" else "Change", color = Color.White) }
     }
+}
+
+@Composable
+fun LabelField(st: Store, k: String, title: String, def: String) {
+    var v by remember(k) { mutableStateOf(st.str("l_$k")) }
+    OutlinedTextField(v, { v = it; st.put("l_$k", it) }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text(title) },
+        placeholder = { Text(def.ifBlank { APP_NAME }) }, singleLine = true)
 }

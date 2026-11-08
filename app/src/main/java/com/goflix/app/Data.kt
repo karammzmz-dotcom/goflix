@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -27,6 +28,35 @@ var RADIUS by mutableStateOf(8)
 var POSTER by mutableStateOf(120)
 var FONT by mutableStateOf<FontFamily>(FontFamily.Default)
 
+var ANIM_ON by mutableStateOf(true)
+var ANIM_SPEED by mutableStateOf(1f)
+var ANIM_STYLE by mutableStateOf("slide")
+var ANIM_POP by mutableStateOf(true)
+var ANIM_STAGGER by mutableStateOf(true)
+var ANIM_HERO by mutableStateOf(true)
+var SHOW_UPLOAD by mutableStateOf(true)
+var SEARCH_GRID by mutableStateOf(true)
+fun ms(x: Int): Int = if (ANIM_ON) (x / ANIM_SPEED).toInt().coerceAtLeast(1) else 0
+
+val LBL = mutableStateMapOf<String, String>()
+// key, title in settings, default text
+val LABELS = listOf(
+    Triple("homeName", "Home header name (blank = app name)", ""),
+    Triple("searchTitle", "Search page title", "Search"),
+    Triple("searchph", "Search box hint", "Search titles, categories…"),
+    Triple("home", "Home tab", "Home"),
+    Triple("search", "Search tab", "Search"),
+    Triple("upload", "Upload tab", "Upload"),
+    Triple("settings", "Settings tab / title", "Settings"),
+    Triple("mylist", "My List", "My List"),
+    Triple("cont", "Continue Watching row", "Continue Watching"),
+    Triple("recent", "Recently Added row", "Recently Added"),
+    Triple("who", "Profile screen title", "Who's watching?"),
+    Triple("manage", "Manage profiles button", "MANAGE PROFILES"),
+    Triple("addprofile", "Add profile label", "Add Profile")
+)
+fun L(k: String, d: String): String = LBL[k]?.takeIf { it.isNotBlank() } ?: d
+
 data class Profile(val id: String = UUID.randomUUID().toString(), val name: String, val avatar: String = "b:0", val kids: Boolean = false, val list: List<String> = emptyList())
 data class Video(val id: String = UUID.randomUUID().toString(), val title: String, val desc: String, val uri: String, val cover: String, val category: String = "My Videos", val added: Long = System.currentTimeMillis())
 
@@ -36,14 +66,14 @@ class Store(val ctx: Context) {
     private val file = File(ctx.filesDir, "goflix.json")
     private val sp = ctx.getSharedPreferences("goflix", 0)
     fun flag(k: String, d: Boolean = true) = sp.getBoolean(k, d)
-    fun setFlag(k: String, v: Boolean) = sp.edit().putBoolean(k, v).apply()
+    fun setFlag(k: String, v: Boolean) { sp.edit().putBoolean(k, v).apply(); applyAll() }
     fun str(k: String, d: String = "") = sp.getString(k, d) ?: d
     fun put(k: String, v: String, persist: Boolean = true) { if (persist) sp.edit().putString(k, v).apply(); applyAll() }
     fun pos(id: String) = sp.getLong("pos_$id", 0L)
     fun dur(id: String) = sp.getLong("dur_$id", 0L)
     fun savePos(id: String, p: Long, d: Long) = sp.edit().putLong("pos_$id", p).putLong("dur_$id", d).apply()
     fun resetLook() {
-        val e = sp.edit(); listOf("name", "accent", "bg", "font", "radius", "poster", "logo").forEach { e.remove(it) }; e.apply(); applyAll()
+        val e = sp.edit(); (listOf("name", "accent", "bg", "font", "radius", "poster", "logo") + LABELS.map { "l_" + it.first }).forEach { e.remove(it) }; e.apply(); applyAll()
     }
 
     fun applyAll() {
@@ -54,6 +84,10 @@ class Store(val ctx: Context) {
         CARD = lerp(BG, Color.White, 0.11f)
         RADIUS = str("radius", "8").toIntOrNull() ?: 8
         POSTER = str("poster", "120").toIntOrNull() ?: 120
+        ANIM_ON = flag("anim"); ANIM_SPEED = (str("animSpeed", "1").toFloatOrNull() ?: 1f).coerceIn(0.4f, 3f)
+        ANIM_STYLE = str("animStyle", "slide"); ANIM_POP = flag("animPop"); ANIM_STAGGER = flag("animStagger"); ANIM_HERO = flag("animHero")
+        SHOW_UPLOAD = flag("showUpload"); SEARCH_GRID = flag("searchGrid")
+        LABELS.forEach { (k, _, _) -> LBL[k] = str("l_$k") }
         FONT = when (val f = str("font", "default")) {
             "default" -> FontFamily.Default; "sans" -> FontFamily.SansSerif; "serif" -> FontFamily.Serif
             "mono" -> FontFamily.Monospace; "cursive" -> FontFamily.Cursive
