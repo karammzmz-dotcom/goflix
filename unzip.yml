@@ -1,0 +1,34 @@
+name: Unzip project
+on:
+  workflow_dispatch:
+  push:
+    paths: ['*.zip']
+permissions:
+  contents: write
+  actions: write
+jobs:
+  unzip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unzip every .zip in the repo root
+        run: |
+          shopt -s nullglob
+          for z in *.zip; do
+            rm -rf _x && mkdir _x
+            unzip -o "$z" -d _x
+            # if the zip has one top-level folder, flatten it
+            if [ "$(ls -A _x | wc -l)" = "1" ] && [ -d "_x/$(ls -A _x)" ]; then cp -a _x/*/. .; else cp -a _x/. .; fi
+            rm -rf _x "$z"
+          done
+      - name: Commit extracted files
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Unzip project" || echo "nothing to commit"
+          git push
+      - name: Start APK build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run build.yml || echo "build.yml not added yet"
