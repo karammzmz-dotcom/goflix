@@ -96,7 +96,7 @@ fun GoflixApp(st: Store) {
             if (showBar) NavBar(scr, { scr = it }) { edit = null; scr = Scr.ADD }
         }) { pad ->
             AnimatedContent(scr, Modifier.fillMaxSize().padding(bottom = pad.calculateBottomPadding()), label = "screen", transitionSpec = {
-                val d = ms(340)
+                val d = ms(120)
                 if (!ANIM_ON || ANIM_STYLE == "none") EnterTransition.None togetherWith ExitTransition.None
                 else when (ANIM_STYLE) {
                     "fade" -> fadeIn(tween(d)) togetherWith fadeOut(tween(d))
@@ -150,10 +150,8 @@ fun Logo(size: Int = 34, text: String? = null) {
 
 @Composable
 fun Reveal(i: Int, content: @Composable () -> Unit) {
-    var on by remember { mutableStateOf(!(ANIM_ON && ANIM_STAGGER)) }
-    LaunchedEffect(Unit) { if (!on) { delay(ms(70).toLong() * i.coerceAtMost(8)); on = true } }
-    val a by animateFloatAsState(if (on) 1f else 0f, tween(ms(450)), label = "reveal")
-    Box(Modifier.graphicsLayer { alpha = a; translationY = (1f - a) * 40f }) { content() }
+    // Content renders immediately — no artificial per-row stagger delay.
+    content()
 }
 
 @Composable
@@ -198,15 +196,15 @@ fun Splash(st: Store, path: String, defaultSound: Boolean, done: () -> Unit) {
             val al = remember { Animatable(0f) }
             LaunchedEffect(Unit) {
                 var mp: MediaPlayer? = null
-                var t = 3400L
+                var t = 900L
                 if (st.flag("sound")) {
                     mp = try { if (has) MediaPlayer().apply { setDataSource(path); prepare() } else MediaPlayer.create(ctx, R.raw.intro) } catch (e: Exception) { null }
-                    mp?.start(); if (mp != null && has) t = mp.duration.toLong().coerceIn(2500L, 9000L)
+                    mp?.start(); if (mp != null && has) t = mp.duration.toLong().coerceIn(900L, 3000L)
                 }
                 coroutineScope {
-                    launch { al.animateTo(1f, tween(800)) }
-                    launch { sc.animateTo(1.35f, tween(t.toInt(), easing = LinearEasing)) }
-                    delay(t - 400); al.animateTo(0f, tween(400))
+                    launch { al.animateTo(1f, tween(220)) }
+                    launch { sc.animateTo(1.12f, tween(t.toInt(), easing = LinearEasing)) }
+                    delay(t - 180); al.animateTo(0f, tween(180))
                 }
                 mp?.release(); finish()
             }
@@ -420,7 +418,7 @@ fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, ad
     val bg = if (kids) Brush.verticalGradient(listOf(Color(0xFF1B1464), Color(0xFF6A2BD9), Color(0xFFE8588F), Color(0xFFFFA24D), BG), 0f, 2000f) else SolidColor(BG)
 
     Box(Modifier.fillMaxSize().background(bg)) {
-        Crossfade(filter, Modifier.fillMaxSize(), tween(ms(300)), label = "filter") { f ->
+        Crossfade(filter, Modifier.fillMaxSize(), tween(ms(120)), label = "filter") { f ->
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
                 if (all.isEmpty()) item {
                     Column(Modifier.fillParentMaxSize().padding(36.dp), Arrangement.Center, Alignment.CenterHorizontally) {
@@ -469,7 +467,8 @@ fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, ad
                 Logo(24, L("homeName", "").ifBlank { null }); Spacer(Modifier.weight(1f))
                 if (kids) Text("kids", color = Color(0xFFFFD400), fontWeight = FontWeight.Black, fontSize = 20.sp, modifier = Modifier.padding(end = 6.dp))
                 IconButton(search) { Icon(Icons.Default.Search, null, Modifier.size(26.dp)) }
-                Box(Modifier.padding(start = 6.dp).clickable(onClick = switch)) { Avatar(p.avatar, 30.dp) }
+                IconButton({}) { Icon(Icons.Default.Notifications, null, Modifier.size(24.dp)) }
+                Box(Modifier.padding(start = 2.dp).clip(RoundedCornerShape(4.dp)).clickable(onClick = switch)) { Avatar(p.avatar, 30.dp) }
             }
             if (all.isNotEmpty()) LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
                 items(listOf("All") + cats + "My List") { c ->
