@@ -84,7 +84,7 @@ fun SettingsScreen(st: Store, p: Profile, switch: () -> Unit) {
     val fontPick = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { u -> u?.let { st.put("font", st.copyFile(it, "font")) } }
     val font = st.str("font", "default")
 
-    Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp)) {
         Text(L("settings", "Settings"), fontSize = 30.sp, fontWeight = FontWeight.Black)
         Row(Modifier.padding(top = 16.dp).fillMaxWidth().clip(RoundedCornerShape(RADIUS.dp)).background(CARD).clickable(onClick = switch).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Avatar(p.avatar, 52.dp)

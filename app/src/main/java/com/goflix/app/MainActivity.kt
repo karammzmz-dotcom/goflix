@@ -91,17 +91,23 @@ fun GoflixApp(st: Store) {
         colorScheme = darkColorScheme(primary = ACC, background = BG, surface = BG, surfaceVariant = CARD, onSurface = Color.White, onBackground = Color.White),
         typography = Typography().withFont(FONT)
     ) {
-        val showBar = cur != null && (scr == Scr.HOME || scr == Scr.SEARCH || scr == Scr.SETTINGS)
-        Scaffold(containerColor = BG, bottomBar = {
-            if (showBar) NavBar(scr, { scr = it }) { edit = null; scr = Scr.ADD }
+        val tabScreens = setOf(Scr.HOME, Scr.SEARCH, Scr.SETTINGS)
+        val showBar = cur != null && scr in tabScreens
+        Scaffold(containerColor = BG, topBar = {
+            if (showBar) TopTabs(scr, { scr = it }) { edit = null; scr = Scr.ADD }
         }) { pad ->
-            AnimatedContent(scr, Modifier.fillMaxSize().padding(bottom = pad.calculateBottomPadding()), label = "screen", transitionSpec = {
-                val d = ms(120)
-                if (!ANIM_ON || ANIM_STYLE == "none") EnterTransition.None togetherWith ExitTransition.None
-                else when (ANIM_STYLE) {
-                    "fade" -> fadeIn(tween(d)) togetherWith fadeOut(tween(d))
-                    "scale" -> (scaleIn(tween(d), 0.92f) + fadeIn(tween(d))) togetherWith fadeOut(tween(d / 2))
-                    else -> (slideInHorizontally(tween(d)) { it / 5 } + fadeIn(tween(d))) togetherWith (slideOutHorizontally(tween(d)) { -it / 6 } + fadeOut(tween(d / 2)))
+            AnimatedContent(scr, Modifier.fillMaxSize().padding(top = pad.calculateTopPadding()), label = "screen", transitionSpec = {
+                if (initialState in tabScreens && targetState in tabScreens) {
+                    // Switching between top tabs is instant — no transition delay.
+                    EnterTransition.None togetherWith ExitTransition.None
+                } else {
+                    val d = ms(120)
+                    if (!ANIM_ON || ANIM_STYLE == "none") EnterTransition.None togetherWith ExitTransition.None
+                    else when (ANIM_STYLE) {
+                        "fade" -> fadeIn(tween(d)) togetherWith fadeOut(tween(d))
+                        "scale" -> (scaleIn(tween(d), 0.92f) + fadeIn(tween(d))) togetherWith fadeOut(tween(d / 2))
+                        else -> (slideInHorizontally(tween(d)) { it / 5 } + fadeIn(tween(d))) togetherWith (slideOutHorizontally(tween(d)) { -it / 6 } + fadeOut(tween(d / 2)))
+                    }
                 }
             }) { s ->
                 Box(Modifier.fillMaxSize()) {
@@ -129,15 +135,29 @@ fun GoflixApp(st: Store) {
     }
 }
 
+/** Netflix-style top navigation: logo on the left, text tabs (with a red underline on the active one)
+ *  taking the place of the old bottom icon bar. Tapping a tab switches instantly — no animation. */
 @Composable
-fun NavBar(scr: Scr, go: (Scr) -> Unit, add: () -> Unit) {
-    NavigationBar(containerColor = BG, tonalElevation = 0.dp) {
-        val c = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, selectedTextColor = Color.White, indicatorColor = ACC,
-            unselectedIconColor = Color(0xFF8A8A8A), unselectedTextColor = Color(0xFF8A8A8A))
-        NavigationBarItem(scr == Scr.HOME, { go(Scr.HOME) }, { Icon(Icons.Default.Home, null) }, label = { Text(L("home", "Home"), fontSize = 11.sp, maxLines = 1) }, colors = c)
-        NavigationBarItem(scr == Scr.SEARCH, { go(Scr.SEARCH) }, { Icon(Icons.Default.Search, null) }, label = { Text(L("search", "Search"), fontSize = 11.sp, maxLines = 1) }, colors = c)
-        if (SHOW_UPLOAD) NavigationBarItem(false, add, { Icon(Icons.Default.Add, null) }, label = { Text(L("upload", "Upload"), fontSize = 11.sp, maxLines = 1) }, colors = c)
-        NavigationBarItem(scr == Scr.SETTINGS, { go(Scr.SETTINGS) }, { Icon(Icons.Default.Settings, null) }, label = { Text(L("settings", "Settings"), fontSize = 11.sp, maxLines = 1) }, colors = c)
+fun TopTabs(scr: Scr, go: (Scr) -> Unit, onAdd: () -> Unit) {
+    val tabs = buildList {
+        this += Scr.HOME to L("home", "Home")
+        this += Scr.SEARCH to L("search", "Search")
+        if (SHOW_UPLOAD) this += Scr.ADD to L("upload", "Upload")
+        this += Scr.SETTINGS to L("settings", "Settings")
+    }
+    Column(Modifier.fillMaxWidth().background(BG).statusBarsPadding()) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Logo(22)
+            Row(Modifier.weight(1f).padding(start = 20.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
+                tabs.forEach { (s, label) ->
+                    val on = scr == s
+                    Column(Modifier.clickable(remember { MutableInteractionSource() }, null) { if (s == Scr.ADD) onAdd() else go(s) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(label, fontSize = 14.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = if (on) Color.White else Color(0xFFB3B3B3), maxLines = 1)
+                        Box(Modifier.padding(top = 4.dp).height(2.dp).width(if (on) 18.dp else 0.dp).background(ACC))
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -462,7 +482,7 @@ fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, ad
             }
         }
         // top overlay: logo, search, avatar + Netflix-style text tabs
-        Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(BG.copy(alpha = .92f), Color.Transparent))).statusBarsPadding().padding(top = 6.dp, bottom = 22.dp)) {
+        Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(BG.copy(alpha = .92f), Color.Transparent))).padding(top = 6.dp, bottom = 22.dp)) {
             Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Logo(24, L("homeName", "").ifBlank { null }); Spacer(Modifier.weight(1f))
                 if (kids) Text("kids", color = Color(0xFFFFD400), fontWeight = FontWeight.Black, fontSize = 20.sp, modifier = Modifier.padding(end = 6.dp))
@@ -523,7 +543,7 @@ fun Search(st: Store, open: (Video) -> Unit) {
     @Composable fun Suggest() {
         sug.forEach { s -> Text(s, Modifier.fillMaxWidth().clickable { q = s }.padding(vertical = 9.dp, horizontal = 4.dp), color = Color(0xFFB3B3B3), fontSize = 15.sp, maxLines = 1) }
     }
-    BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 600.dp
         if (wide) Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Column(Modifier.width(280.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
