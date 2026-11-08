@@ -94,12 +94,12 @@ fun GoflixApp(st: Store) {
         val tabScreens = setOf(Scr.HOME, Scr.SEARCH, Scr.SETTINGS)
         val showBar = cur != null && scr in tabScreens
         Scaffold(containerColor = BG, topBar = {
-            if (showBar) TopTabs(scr, { scr = it }) { edit = null; scr = Scr.ADD }
+            if (showBar) TopTabs(scr, cur, go = { scr = it }, onAdd = { edit = null; scr = Scr.ADD }, onAvatar = { scr = Scr.PROFILES })
         }) { pad ->
             AnimatedContent(scr, Modifier.fillMaxSize().padding(top = pad.calculateTopPadding()), label = "screen", transitionSpec = {
                 if (initialState in tabScreens && targetState in tabScreens) {
-                    // Switching between top tabs is instant — no transition delay.
-                    EnterTransition.None togetherWith ExitTransition.None
+                    // Switching between top tabs is instant: no fade/slide AND no size animation.
+                    EnterTransition.None togetherWith ExitTransition.None using SizeTransform(clip = false) { _, _ -> snap() }
                 } else {
                     val d = ms(120)
                     if (!ANIM_ON || ANIM_STYLE == "none") EnterTransition.None togetherWith ExitTransition.None
@@ -117,7 +117,7 @@ fun GoflixApp(st: Store) {
                         Scr.PINTRO -> Splash(st, st.str("pIntroPath"), false) { scr = Scr.HOME }
                         Scr.HOME -> cur?.let { p ->
                             Home(st, p, open = { click(); sel = it; scr = Scr.DETAIL }, play = { sel = it; scr = Scr.PLAYER },
-                                add = { edit = null; scr = Scr.ADD }, switch = { scr = Scr.PROFILES }, search = { scr = Scr.SEARCH },
+                                add = { edit = null; scr = Scr.ADD },
                                 toggle = { v -> cur = st.toggleList(p, v.id) })
                         }
                         Scr.SEARCH -> Search(st) { click(); sel = it; scr = Scr.DETAIL }
@@ -135,10 +135,10 @@ fun GoflixApp(st: Store) {
     }
 }
 
-/** Netflix-style top navigation: logo on the left, text tabs (with a red underline on the active one)
- *  taking the place of the old bottom icon bar. Tapping a tab switches instantly — no animation. */
+/** The ONE top bar for the app: logo + text tabs (red underline on the active one) on the left,
+ *  bell + profile avatar on the right. Tapping a tab switches instantly — no animation, no delay. */
 @Composable
-fun TopTabs(scr: Scr, go: (Scr) -> Unit, onAdd: () -> Unit) {
+fun TopTabs(scr: Scr, p: Profile?, go: (Scr) -> Unit, onAdd: () -> Unit, onAvatar: () -> Unit) {
     val tabs = buildList {
         this += Scr.HOME to L("home", "Home")
         this += Scr.SEARCH to L("search", "Search")
@@ -146,7 +146,7 @@ fun TopTabs(scr: Scr, go: (Scr) -> Unit, onAdd: () -> Unit) {
         this += Scr.SETTINGS to L("settings", "Settings")
     }
     Column(Modifier.fillMaxWidth().background(BG).statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Logo(22)
             Row(Modifier.weight(1f).padding(start = 20.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
                 tabs.forEach { (s, label) ->
@@ -157,6 +157,9 @@ fun TopTabs(scr: Scr, go: (Scr) -> Unit, onAdd: () -> Unit) {
                     }
                 }
             }
+            if (p?.kids == true) Text("kids", color = Color(0xFFFFD400), fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(end = 4.dp))
+            IconButton({}) { Icon(Icons.Default.Notifications, null, Modifier.size(22.dp)) }
+            if (p != null) Box(Modifier.padding(start = 2.dp).clip(RoundedCornerShape(4.dp)).clickable(onClick = onAvatar)) { Avatar(p.avatar, 28.dp) }
         }
     }
 }
@@ -427,7 +430,7 @@ fun KidsHeader(p: Profile, all: List<Video>, open: (Video) -> Unit) {
 }
 
 @Composable
-fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, add: () -> Unit, switch: () -> Unit, search: () -> Unit, toggle: (Video) -> Unit) {
+fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, add: () -> Unit, toggle: (Video) -> Unit) {
     var filter by remember { mutableStateOf("All") }
     var grid by remember { mutableStateOf(true) }
     var sort by remember { mutableStateOf("Newest") }
@@ -481,16 +484,9 @@ fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, ad
                 }
             }
         }
-        // top overlay: logo, search, avatar + Netflix-style text tabs
-        Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(BG.copy(alpha = .92f), Color.Transparent))).padding(top = 6.dp, bottom = 22.dp)) {
-            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Logo(24, L("homeName", "").ifBlank { null }); Spacer(Modifier.weight(1f))
-                if (kids) Text("kids", color = Color(0xFFFFD400), fontWeight = FontWeight.Black, fontSize = 20.sp, modifier = Modifier.padding(end = 6.dp))
-                IconButton(search) { Icon(Icons.Default.Search, null, Modifier.size(26.dp)) }
-                IconButton({}) { Icon(Icons.Default.Notifications, null, Modifier.size(24.dp)) }
-                Box(Modifier.padding(start = 2.dp).clip(RoundedCornerShape(4.dp)).clickable(onClick = switch)) { Avatar(p.avatar, 30.dp) }
-            }
-            if (all.isNotEmpty()) LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+        // Category filter strip only — logo/search/bell/avatar already live in the one global top bar.
+        if (all.isNotEmpty()) Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(BG.copy(alpha = .92f), Color.Transparent))).padding(top = 10.dp, bottom = 22.dp)) {
+            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
                 items(listOf("All") + cats + "My List") { c ->
                     val on = c == filter
                     val w by animateDpAsState(if (on) 24.dp else 0.dp, tween(ms(250)), label = "ul")
