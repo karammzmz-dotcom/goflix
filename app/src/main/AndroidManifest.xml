@@ -1,12 +1,22 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
-    <application android:label="Goflix" android:icon="@mipmap/ic_launcher" android:theme="@style/Theme.Goflix" android:allowBackup="true">
+    <!-- Don't require a touchscreen or a gamepad — the app is fully usable with either, or a D-pad remote. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+    <uses-feature android:name="android.hardware.gamepad" android:required="false"/>
+    <uses-feature android:name="android.software.leanback" android:required="false"/>
+    <application android:label="Goflix" android:icon="@mipmap/ic_launcher" android:theme="@style/Theme.Goflix" android:allowBackup="true"
+        android:banner="@mipmap/ic_launcher">
         <activity android:name=".MainActivity" android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Lets the app appear in the Android TV / Fire TV launcher for remote-first navigation. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
     </application>
