@@ -98,8 +98,9 @@ fun GoflixApp(st: Store) {
         }) { pad ->
             AnimatedContent(scr, Modifier.fillMaxSize().padding(top = pad.calculateTopPadding()), label = "screen", transitionSpec = {
                 if (initialState in tabScreens && targetState in tabScreens) {
-                    // Switching between top tabs is instant: no fade/slide AND no size animation.
-                    EnterTransition.None togetherWith ExitTransition.None using SizeTransform(clip = false) { _, _ -> snap() }
+                    // Quick cross-fade between tabs — a real but snappy animation, not a dead instant cut.
+                    val d = ms(110)
+                    (fadeIn(tween(d)) togetherWith fadeOut(tween(d))) using SizeTransform(clip = false) { _, _ -> tween(d) }
                 } else {
                     val d = ms(120)
                     if (!ANIM_ON || ANIM_STYLE == "none") EnterTransition.None togetherWith ExitTransition.None
