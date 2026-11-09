@@ -28,9 +28,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.ContentScale
@@ -64,18 +61,6 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Scr { INTRO, PROFILES, PINTRO, HOME, SEARCH, ADD, DETAIL, PLAYER, SETTINGS }
-
-/** Makes any element reachable and visibly highlighted when navigated to with a D-pad, TV remote,
- *  or game controller — without this, those inputs can move focus around but nothing shows where. */
-fun Modifier.tvFocusable(radius: Dp = RADIUS.dp): Modifier = composed {
-    var on by remember { mutableStateOf(false) }
-    val sc by animateFloatAsState(if (on) 1.07f else 1f, tween(120), label = "tvFocusScale")
-    this
-        .onFocusChanged { on = it.isFocused }
-        .focusable()
-        .graphicsLayer { scaleX = sc; scaleY = sc }
-        .border(if (on) 2.5.dp else 0.dp, if (on) Color.White else Color.Transparent, RoundedCornerShape(radius))
-}
 
 fun TextStyle.f(ff: FontFamily) = copy(fontFamily = ff)
 fun Typography.withFont(f: FontFamily) = copy(
@@ -113,9 +98,9 @@ fun GoflixApp(st: Store) {
         }) { pad ->
             AnimatedContent(scr, Modifier.fillMaxSize().padding(top = pad.calculateTopPadding()), label = "screen", transitionSpec = {
                 if (initialState in tabScreens && targetState in tabScreens) {
-                    // Very short cross-fade: fast enough to not read as a delay, but not a jarring hard cut either.
-                    val d = ms(70)
-                    (fadeIn(tween(d)) togetherWith fadeOut(tween(d))) using SizeTransform(clip = false) { _, _ -> snap() }
+                    // Quick cross-fade between tabs — a real but snappy animation, not a dead instant cut.
+                    val d = ms(110)
+                    (fadeIn(tween(d)) togetherWith fadeOut(tween(d))) using SizeTransform(clip = false) { _, _ -> tween(d) }
                 } else {
                     val d = ms(120)
                     if (!ANIM_ON || ANIM_STYLE == "none") EnterTransition.None togetherWith ExitTransition.None
@@ -161,27 +146,21 @@ fun TopTabs(scr: Scr, p: Profile?, go: (Scr) -> Unit, onAdd: () -> Unit, onAvata
         if (SHOW_UPLOAD) this += Scr.ADD to L("upload", "Upload")
         this += Scr.SETTINGS to L("settings", "Settings")
     }
-    val homeFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { try { homeFocus.requestFocus() } catch (e: Exception) { } }
     Column(Modifier.fillMaxWidth().background(BG).statusBarsPadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Logo(22)
             Row(Modifier.weight(1f).padding(start = 20.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
                 tabs.forEach { (s, label) ->
                     val on = scr == s
-                    Column(Modifier
-                        .then(if (s == Scr.HOME) Modifier.focusRequester(homeFocus) else Modifier)
-                        .tvFocusable(4.dp)
-                        .clickable(remember { MutableInteractionSource() }, null) { if (s == Scr.ADD) onAdd() else go(s) },
-                        horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.clickable(remember { MutableInteractionSource() }, null) { if (s == Scr.ADD) onAdd() else go(s) }, horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(label, fontSize = 14.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = if (on) Color.White else Color(0xFFB3B3B3), maxLines = 1)
                         Box(Modifier.padding(top = 4.dp).height(2.dp).width(if (on) 18.dp else 0.dp).background(ACC))
                     }
                 }
             }
             if (p?.kids == true) Text("kids", color = Color(0xFFFFD400), fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(end = 4.dp))
-            IconButton({}, Modifier.tvFocusable(50.dp)) { Icon(Icons.Default.Notifications, null, Modifier.size(22.dp)) }
-            if (p != null) Box(Modifier.padding(start = 2.dp).tvFocusable(4.dp).clip(RoundedCornerShape(4.dp)).clickable(onClick = onAvatar)) { Avatar(p.avatar, 28.dp) }
+            IconButton({}) { Icon(Icons.Default.Notifications, null, Modifier.size(22.dp)) }
+            if (p != null) Box(Modifier.padding(start = 2.dp).clip(RoundedCornerShape(4.dp)).clickable(onClick = onAvatar)) { Avatar(p.avatar, 28.dp) }
         }
     }
 }
@@ -357,7 +336,7 @@ fun Poster(v: Video, modifier: Modifier = Modifier, progress: Float = 0f, showTi
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val sc by animateFloatAsState(if (pressed && ANIM_ON && ANIM_POP) 0.93f else 1f, tween(ms(160)), label = "press")
-    Column(modifier.graphicsLayer { scaleX = sc; scaleY = sc }.tvFocusable().clickable(src, null, onClick = onClick)) {
+    Column(modifier.graphicsLayer { scaleX = sc; scaleY = sc }.clickable(src, null, onClick = onClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(RADIUS.dp)).background(CARD), Alignment.Center) {
             if (v.cover.isNotEmpty()) AsyncImage(File(v.cover), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Text(v.title.take(1).uppercase(), fontSize = 40.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
@@ -426,10 +405,10 @@ fun Hero(f: Video, p: Profile, play: (Video) -> Unit, toggle: (Video) -> Unit) {
             Text(f.title, fontSize = 32.sp, fontWeight = FontWeight.Black, lineHeight = 36.sp)
             if (f.desc.isNotBlank()) Text(f.desc, Modifier.padding(top = 6.dp), color = Color(0xFFDDDDDD), fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button({ play(f) }, Modifier.weight(1f).height(48.dp).tvFocusable(), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black), shape = RoundedCornerShape(RADIUS.dp)) {
+                Button({ play(f) }, Modifier.weight(1f).height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black), shape = RoundedCornerShape(RADIUS.dp)) {
                     Icon(Icons.Default.PlayArrow, null); Text(" Play", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
-                Button({ toggle(f) }, Modifier.weight(1f).height(48.dp).tvFocusable(), colors = ButtonDefaults.buttonColors(containerColor = Color(0x88555555), contentColor = Color.White), shape = RoundedCornerShape(RADIUS.dp)) {
+                Button({ toggle(f) }, Modifier.weight(1f).height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0x88555555), contentColor = Color.White), shape = RoundedCornerShape(RADIUS.dp)) {
                     Icon(if (f.id in p.list) Icons.Default.Check else Icons.Default.Add, null); Text(" " + L("mylist", "My List"), fontWeight = FontWeight.Bold, maxLines = 1)
                 }
             }
@@ -610,7 +589,7 @@ fun Detail(st: Store, p: Profile, v: Video, back: () -> Unit, play: () -> Unit, 
                     Box(Modifier.clip(RoundedCornerShape(4.dp)).background(CARD).padding(horizontal = 8.dp, vertical = 3.dp)) { Text(v.category, fontSize = 12.sp, color = Color.LightGray) }
                     Text(java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault()).format(java.util.Date(v.added)), fontSize = 12.sp, color = Color.Gray)
                 }
-                Button(play, Modifier.fillMaxWidth().height(50.dp).tvFocusable(), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black), shape = RoundedCornerShape(RADIUS.dp)) {
+                Button(play, Modifier.fillMaxWidth().height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black), shape = RoundedCornerShape(RADIUS.dp)) {
                     Icon(Icons.Default.PlayArrow, null); Text(if (resume) " Resume" else " Play", fontWeight = FontWeight.Bold, fontSize = 17.sp)
                 }
                 if (resume) LinearProgressIndicator({ st.pos(v.id).toFloat() / st.dur(v.id) }, Modifier.fillMaxWidth().padding(top = 8.dp).height(3.dp), color = ACC, trackColor = CARD)
@@ -631,7 +610,7 @@ fun Detail(st: Store, p: Profile, v: Video, back: () -> Unit, play: () -> Unit, 
 
 @Composable
 fun Action(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    Column(Modifier.clip(RoundedCornerShape(8.dp)).tvFocusable().clickable(onClick = onClick).padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(icon, null, Modifier.size(26.dp)); Text(label, fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 4.dp), maxLines = 1)
     }
 }
