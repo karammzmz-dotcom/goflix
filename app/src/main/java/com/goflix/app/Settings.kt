@@ -71,7 +71,7 @@ fun Chip(label: String, on: Boolean, ff: FontFamily = FONT, onClick: () -> Unit)
 }
 
 @Composable
-fun SettingsScreen(st: Store, p: Profile, switch: () -> Unit) {
+fun SettingsScreen(st: Store, p: Profile, nav: (Scr) -> Unit, manage: () -> Unit, switch: () -> Unit) {
     val ctx = LocalContext.current
     var confirm by remember { mutableStateOf(false) }
     var labelsReset by remember { mutableStateOf(0) }
@@ -85,7 +85,7 @@ fun SettingsScreen(st: Store, p: Profile, switch: () -> Unit) {
     val font = st.str("font", "default")
 
     Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 14.dp)) {
-        Text(L("settings", "Settings"), fontSize = 30.sp, fontWeight = FontWeight.Black)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(L("settings", "Settings"), Modifier.weight(1f), fontSize = 30.sp, fontWeight = FontWeight.Black); ProfileMenu(p, nav, manage) }
         Row(Modifier.padding(top = 16.dp).fillMaxWidth().clip(RoundedCornerShape(RADIUS.dp)).background(CARD).clickable(onClick = switch).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Avatar(p.avatar, 52.dp)
             Column(Modifier.padding(start = 14.dp).weight(1f)) { Text(p.name, fontSize = 18.sp, fontWeight = FontWeight.Bold); Text("Switch or manage profiles", color = Color.Gray, fontSize = 13.sp) }

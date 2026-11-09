@@ -35,6 +35,8 @@ var ANIM_POP by mutableStateOf(true)
 var ANIM_STAGGER by mutableStateOf(true)
 var ANIM_HERO by mutableStateOf(true)
 var SHOW_UPLOAD by mutableStateOf(true)
+var IS_TV by mutableStateOf(false)
+fun hashPin(s: String): String = java.security.MessageDigest.getInstance("SHA-256").digest(("goflix" + s).toByteArray()).joinToString("") { "%02x".format(it) }
 var SEARCH_GRID by mutableStateOf(true)
 fun ms(x: Int): Int = if (ANIM_ON) (x / ANIM_SPEED).toInt().coerceAtLeast(1) else 0
 
@@ -63,7 +65,7 @@ val LABELS = listOf(
 )
 fun L(k: String, d: String): String = LBL[k]?.takeIf { it.isNotBlank() } ?: d
 
-data class Profile(val id: String = UUID.randomUUID().toString(), val name: String, val avatar: String = "b:0", val kids: Boolean = false, val list: List<String> = emptyList())
+data class Profile(val id: String = UUID.randomUUID().toString(), val name: String, val avatar: String = "b:0", val kids: Boolean = false, val list: List<String> = emptyList(), val pin: String = "")
 data class Video(val id: String = UUID.randomUUID().toString(), val title: String, val desc: String, val uri: String, val cover: String, val category: String = "My Videos", val added: Long = System.currentTimeMillis())
 
 class Store(val ctx: Context) {
@@ -108,7 +110,7 @@ class Store(val ctx: Context) {
                 val pa = o.getJSONArray("p")
                 for (i in 0 until pa.length()) {
                     val x = pa.getJSONObject(i); val l = x.getJSONArray("list")
-                    profiles.add(Profile(x.getString("id"), x.getString("name"), x.getString("avatar"), x.getBoolean("kids"), (0 until l.length()).map { l.getString(it) }))
+                    profiles.add(Profile(x.getString("id"), x.getString("name"), x.getString("avatar"), x.getBoolean("kids"), (0 until l.length()).map { l.getString(it) }, x.optString("pin", "")))
                 }
                 val va = o.getJSONArray("v")
                 for (i in 0 until va.length()) {
@@ -117,12 +119,14 @@ class Store(val ctx: Context) {
                 }
             }
         } catch (e: Exception) { }
+        IS_TV = ctx.packageManager.hasSystemFeature("android.software.leanback") ||
+            (ctx.getSystemService(Context.UI_MODE_SERVICE) as android.app.UiModeManager).currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
         applyAll()
     }
 
     fun save() {
         val o = JSONObject()
-        val pa = JSONArray(); profiles.forEach { p -> pa.put(JSONObject().put("id", p.id).put("name", p.name).put("avatar", p.avatar).put("kids", p.kids).put("list", JSONArray(p.list))) }
+        val pa = JSONArray(); profiles.forEach { p -> pa.put(JSONObject().put("id", p.id).put("name", p.name).put("avatar", p.avatar).put("kids", p.kids).put("list", JSONArray(p.list)).put("pin", p.pin)) }
         val va = JSONArray(); videos.forEach { v -> va.put(JSONObject().put("id", v.id).put("title", v.title).put("desc", v.desc).put("uri", v.uri).put("cover", v.cover).put("cat", v.category).put("added", v.added)) }
         o.put("p", pa); o.put("v", va); file.writeText(o.toString())
     }

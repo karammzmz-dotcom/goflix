@@ -31,6 +31,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -64,6 +75,12 @@ class MainActivity : ComponentActivity() {
 
 enum class Scr { INTRO, PROFILES, PINTRO, HOME, SEARCH, ADD, DETAIL, PLAYER, SETTINGS }
 
+fun Modifier.focusGlow(shape: Shape = RoundedCornerShape(RADIUS.dp)): Modifier = composed {
+    var f by remember { mutableStateOf(false) }
+    val sc by animateFloatAsState(if (f) 1.06f else 1f, tween(ms(150)), label = "focus")
+    Modifier.onFocusChanged { f = it.isFocused }.graphicsLayer { scaleX = sc; scaleY = sc }.then(if (f) Modifier.border(3.dp, Color.White, shape) else Modifier)
+}
+
 fun rank(s: Scr) = when (s) { Scr.HOME -> 0; Scr.SEARCH -> 1; Scr.SETTINGS -> 2; else -> 3 }
 
 fun TextStyle.f(ff: FontFamily) = copy(fontFamily = ff)
@@ -92,45 +109,48 @@ fun GoflixApp(st: Store) {
         scr = if (scr == Scr.PLAYER) Scr.DETAIL else Scr.HOME
     }
 
+    val menuNav: (Scr) -> Unit = { t ->
+        when (t) {
+            Scr.ADD -> { edit = null; scr = Scr.ADD }
+            Scr.PROFILES -> { startManage = false; scr = Scr.PROFILES }
+            else -> scr = t
+        }
+    }
+    val manage = { startManage = true; scr = Scr.PROFILES }
+
     MaterialTheme(
         colorScheme = darkColorScheme(primary = ACC, background = BG, surface = BG, surfaceVariant = CARD, onSurface = Color.White, onBackground = Color.White),
         typography = Typography().withFont(FONT)
     ) {
-        val showBar = cur != null && (scr == Scr.HOME || scr == Scr.SEARCH || scr == Scr.SETTINGS)
-        Scaffold(containerColor = BG, bottomBar = {
-            if (showBar) NavBar(scr, { scr = it }) { edit = null; scr = Scr.ADD }
-        }) { pad ->
-            AnimatedContent(scr, Modifier.fillMaxSize().padding(bottom = pad.calculateBottomPadding()), label = "screen", transitionSpec = {
-                val d = ms(450)
-                val e = FastOutSlowInEasing
-                val dir = if (rank(targetState) >= rank(initialState)) 1 else -1
-                if (!ANIM_ON || ANIM_STYLE == "none") EnterTransition.None togetherWith ExitTransition.None
-                else when (ANIM_STYLE) {
-                    "fade" -> fadeIn(tween(d, easing = e)) togetherWith fadeOut(tween(d, easing = e))
-                    "scale" -> (scaleIn(tween(d, easing = e), 0.9f) + fadeIn(tween(d, easing = e))) togetherWith (scaleOut(tween(d, easing = e), 1.06f) + fadeOut(tween(d / 2)))
-                    else -> (slideInHorizontally(tween(d, easing = e)) { dir * it } + fadeIn(tween(d, easing = e))) togetherWith (slideOutHorizontally(tween(d, easing = e)) { -dir * it / 3 } + fadeOut(tween(d, easing = e)))
-                }
-            }) { s ->
-                Box(Modifier.fillMaxSize()) {
-                    when (s) {
-                        Scr.INTRO -> Splash(st, st.str("introPath"), true) { scr = Scr.PROFILES }
-                        Scr.PROFILES -> Profiles(st, startManage) { cur = it; click(); scr = Scr.PINTRO }
-                        Scr.PINTRO -> Splash(st, st.str("pIntroPath"), false) { scr = Scr.HOME }
-                        Scr.HOME -> cur?.let { p ->
-                            Home(st, p, open = { click(); sel = it; scr = Scr.DETAIL }, play = { sel = it; scr = Scr.PLAYER },
-                                add = { edit = null; scr = Scr.ADD }, switch = { startManage = false; scr = Scr.PROFILES }, search = { scr = Scr.SEARCH },
-                                toggle = { v -> cur = st.toggleList(p, v.id) },
-                                settings = { scr = Scr.SETTINGS }, manage = { startManage = true; scr = Scr.PROFILES })
-                        }
-                        Scr.SEARCH -> Search(st) { click(); sel = it; scr = Scr.DETAIL }
-                        Scr.ADD -> AddEdit(st, edit) { scr = Scr.HOME }
-                        Scr.DETAIL -> sel?.let { v -> cur?.let { p ->
-                            Detail(st, p, v, back = { scr = Scr.HOME }, play = { scr = Scr.PLAYER }, edit = { edit = v; scr = Scr.ADD },
-                                toggle = { cur = st.toggleList(p, v.id) }, open = { sel = it })
-                        } }
-                        Scr.PLAYER -> sel?.let { Player(st, it) { scr = Scr.DETAIL } }
-                        Scr.SETTINGS -> cur?.let { p -> SettingsScreen(st, p) { startManage = false; scr = Scr.PROFILES } }
+        AnimatedContent(scr, Modifier.fillMaxSize().background(BG), label = "screen", transitionSpec = {
+            val d = ms(450)
+            val e = FastOutSlowInEasing
+            val dir = if (rank(targetState) >= rank(initialState)) 1 else -1
+            if (!ANIM_ON || ANIM_STYLE == "none") EnterTransition.None togetherWith ExitTransition.None
+            else when (ANIM_STYLE) {
+                "fade" -> fadeIn(tween(d, easing = e)) togetherWith fadeOut(tween(d, easing = e))
+                "scale" -> (scaleIn(tween(d, easing = e), 0.9f) + fadeIn(tween(d, easing = e))) togetherWith (scaleOut(tween(d, easing = e), 1.06f) + fadeOut(tween(d / 2)))
+                else -> (slideInHorizontally(tween(d, easing = e)) { dir * it } + fadeIn(tween(d, easing = e))) togetherWith (slideOutHorizontally(tween(d, easing = e)) { -dir * it / 3 } + fadeOut(tween(d, easing = e)))
+            }
+        }) { s ->
+            Box(Modifier.fillMaxSize().background(BG)) {
+                when (s) {
+                    Scr.INTRO -> Splash(st, st.str("introPath"), true) { scr = Scr.PROFILES }
+                    Scr.PROFILES -> Profiles(st, startManage) { cur = it; click(); scr = Scr.PINTRO }
+                    Scr.PINTRO -> Splash(st, st.str("pIntroPath"), false) { scr = Scr.HOME }
+                    Scr.HOME -> cur?.let { p ->
+                        Home(st, p, open = { click(); sel = it; scr = Scr.DETAIL }, play = { sel = it; scr = Scr.PLAYER },
+                            add = { edit = null; scr = Scr.ADD }, nav = menuNav, manage = manage,
+                            toggle = { v -> cur = st.toggleList(p, v.id) })
                     }
+                    Scr.SEARCH -> cur?.let { p -> Search(st, p, menuNav, manage) { click(); sel = it; scr = Scr.DETAIL } }
+                    Scr.ADD -> AddEdit(st, edit) { scr = Scr.HOME }
+                    Scr.DETAIL -> sel?.let { v -> cur?.let { p ->
+                        Detail(st, p, v, back = { scr = Scr.HOME }, play = { scr = Scr.PLAYER }, edit = { edit = v; scr = Scr.ADD },
+                            toggle = { cur = st.toggleList(p, v.id) }, open = { sel = it })
+                    } }
+                    Scr.PLAYER -> sel?.let { Player(st, it) { scr = Scr.DETAIL } }
+                    Scr.SETTINGS -> cur?.let { p -> SettingsScreen(st, p, menuNav, manage) { startManage = false; scr = Scr.PROFILES } }
                 }
             }
         }
@@ -138,14 +158,23 @@ fun GoflixApp(st: Store) {
 }
 
 @Composable
-fun NavBar(scr: Scr, go: (Scr) -> Unit, add: () -> Unit) {
-    NavigationBar(containerColor = BG, tonalElevation = 0.dp) {
-        val c = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, selectedTextColor = Color.White, indicatorColor = ACC,
-            unselectedIconColor = Color(0xFF8A8A8A), unselectedTextColor = Color(0xFF8A8A8A))
-        NavigationBarItem(scr == Scr.HOME, { go(Scr.HOME) }, { Icon(Icons.Default.Home, null) }, label = { Text(L("home", "Home"), fontSize = 11.sp, maxLines = 1) }, colors = c)
-        NavigationBarItem(scr == Scr.SEARCH, { go(Scr.SEARCH) }, { Icon(Icons.Default.Search, null) }, label = { Text(L("search", "Search"), fontSize = 11.sp, maxLines = 1) }, colors = c)
-        if (SHOW_UPLOAD) NavigationBarItem(false, add, { Icon(Icons.Default.Add, null) }, label = { Text(L("upload", "Upload"), fontSize = 11.sp, maxLines = 1) }, colors = c)
-        NavigationBarItem(scr == Scr.SETTINGS, { go(Scr.SETTINGS) }, { Icon(Icons.Default.Settings, null) }, label = { Text(L("settings", "Settings"), fontSize = 11.sp, maxLines = 1) }, colors = c)
+fun ProfileMenu(p: Profile, nav: (Scr) -> Unit, manage: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        Row(Modifier.focusGlow(RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).clickable { menu = true }.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Avatar(p.avatar, 32.dp); Text("▾", Modifier.padding(start = 4.dp), fontSize = 13.sp)
+        }
+        DropdownMenu(menu, { menu = false }, Modifier.background(Color(0xF2141414))) {
+            DropdownMenuItem({ Text(L("home", "Home")) }, { menu = false; nav(Scr.HOME) }, leadingIcon = { Icon(Icons.Default.Home, null) })
+            DropdownMenuItem({ Text(L("search", "Search")) }, { menu = false; nav(Scr.SEARCH) }, leadingIcon = { Icon(Icons.Default.Search, null) })
+            if (SHOW_UPLOAD) DropdownMenuItem({ Text(L("upload", "Upload")) }, { menu = false; nav(Scr.ADD) }, leadingIcon = { Icon(Icons.Default.Add, null) })
+            DropdownMenuItem({ Text(L("menuSettings", "Account & Settings")) }, { menu = false; nav(Scr.SETTINGS) }, leadingIcon = { Icon(Icons.Default.Settings, null) })
+            HorizontalDivider(color = Color(0xFF333333))
+            DropdownMenuItem({ Text(L("menuManage", "Manage Profiles")) }, { menu = false; manage() }, leadingIcon = { Icon(Icons.Default.Edit, null) })
+            DropdownMenuItem({ Text(L("menuSwitch", "Switch Profile")) }, { menu = false; nav(Scr.PROFILES) }, leadingIcon = { Icon(Icons.Default.Person, null) })
+            HorizontalDivider(color = Color(0xFF333333))
+            DropdownMenuItem({ Text(L("menuOut", "Sign out"), Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }, { menu = false; nav(Scr.PROFILES) })
+        }
     }
 }
 
@@ -168,16 +197,20 @@ fun Reveal(i: Int, content: @Composable () -> Unit) {
 fun Stars(modifier: Modifier) {
     val t = rememberInfiniteTransition(label = "stars")
     val a by t.animateFloat(0.2f, 1f, infiniteRepeatable(tween(1800), RepeatMode.Reverse), label = "a")
-    val pts = remember { val r = java.util.Random(7); List(50) { Triple(r.nextFloat(), r.nextFloat(), r.nextFloat()) } }
+    val pts = remember { val r = java.util.Random(7); List(60) { Triple(r.nextFloat(), r.nextFloat() * 0.85f, r.nextFloat()) } }
     Canvas(modifier) {
-        pts.forEachIndexed { i, (x, y, s) ->
-            val al = if (ANIM_ON) (if (i % 2 == 0) a else 1.2f - a) else 0.8f
-            drawCircle(Color.White.copy(alpha = al.coerceIn(0.1f, 1f)), 1.5f + s * 3.5f, Offset(x * size.width, y * size.height))
+        pts.forEachIndexed { i, (x, y, sz) ->
+            val al = (if (ANIM_ON) (if (i % 2 == 0) a else 1.2f - a) else 0.8f).coerceIn(0.1f, 1f)
+            val c = Offset(x * size.width, y * size.height)
+            if (i % 8 == 0) {
+                val len = 6f + sz * 8f
+                drawLine(Color.White.copy(alpha = al), Offset(c.x - len, c.y), Offset(c.x + len, c.y), 2.5f, StrokeCap.Round)
+                drawLine(Color.White.copy(alpha = al), Offset(c.x, c.y - len), Offset(c.x, c.y + len), 2.5f, StrokeCap.Round)
+            } else drawCircle(Color.White.copy(alpha = al), 1.5f + sz * 3.5f, c)
         }
     }
 }
 
-/** Full-screen intro: plays the user's own video/audio if provided, otherwise an animated logo. */
 @Composable
 fun Splash(st: Store, path: String, defaultSound: Boolean, done: () -> Unit) {
     val ctx = LocalContext.current
@@ -245,6 +278,8 @@ fun Avatar(a: String, size: Dp, round: Dp = (size.value * 0.06f).dp) {
 fun Profiles(st: Store, startManage: Boolean, onPick: (Profile) -> Unit) {
     var manage by remember { mutableStateOf(startManage) }
     var editing by remember { mutableStateOf<Profile?>(null) }
+    var pinFor by remember { mutableStateOf<Pair<Profile, Boolean>?>(null) }
+    fun act(p: Profile) { if (p.pin.isEmpty()) { if (manage) editing = p else onPick(p) } else pinFor = p to manage }
     Column(Modifier.fillMaxSize().background(Color(0xFF141414)).statusBarsPadding().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(10.dp)); Logo(26)
         Spacer(Modifier.weight(0.5f))
@@ -258,13 +293,14 @@ fun Profiles(st: Store, startManage: Boolean, onPick: (Profile) -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                         row.forEachIndexed { ci, p ->
                             Reveal(ri * n + ci) {
-                                Column(Modifier.width(106.dp).clickable(remember { MutableInteractionSource() }, null) { if (p == null) editing = Profile(name = "") else if (manage) editing = p else onPick(p) },
+                                Column(Modifier.width(106.dp).focusGlow(RoundedCornerShape(6.dp)).clickable(remember { MutableInteractionSource() }, null) { if (p == null) editing = Profile(name = "") else act(p) },
                                     horizontalAlignment = Alignment.CenterHorizontally) {
                                     if (p == null) Box(Modifier.size(100.dp), Alignment.Center) {
                                         Box(Modifier.size(84.dp).clip(CircleShape).background(Color(0xFF808080)), Alignment.Center) { Icon(Icons.Default.Add, null, Modifier.size(54.dp), tint = Color(0xFF141414)) }
                                     } else Box(contentAlignment = Alignment.Center) {
                                         Avatar(p.avatar, 100.dp)
                                         if (manage) Box(Modifier.size(100.dp).background(Color(0x99000000)), Alignment.Center) { Icon(Icons.Default.Edit, null, Modifier.size(32.dp)) }
+                                        if (p.pin.isNotEmpty()) Box(Modifier.align(Alignment.BottomEnd).padding(5.dp).size(24.dp).clip(CircleShape).background(Color(0xCC000000)), Alignment.Center) { Icon(Icons.Default.Lock, null, Modifier.size(14.dp)) }
                                     }
                                     Text(if (p == null) L("addprofile", "Add Profile") else p.name, Modifier.padding(top = 10.dp), fontSize = 14.sp, color = Color(0xFF9A9A9A), maxLines = 1)
                                     if (p?.kids == true) Text("KIDS", color = Color(0xFFFFD400), fontSize = 10.sp, fontWeight = FontWeight.Black)
@@ -276,12 +312,49 @@ fun Profiles(st: Store, startManage: Boolean, onPick: (Profile) -> Unit) {
             }
         }
         Spacer(Modifier.weight(1f))
-        Box(Modifier.border(1.dp, Color(0xFF8A8A8A)).clickable { manage = !manage }.padding(horizontal = 24.dp, vertical = 12.dp)) {
+        Box(Modifier.focusGlow(RoundedCornerShape(2.dp)).border(1.dp, Color(0xFF8A8A8A)).clickable { manage = !manage }.padding(horizontal = 24.dp, vertical = 12.dp)) {
             Text(if (manage) "DONE" else L("manage", "MANAGE PROFILES"), color = Color(0xFF9A9A9A), letterSpacing = 2.sp, fontSize = 13.sp)
         }
         Spacer(Modifier.height(24.dp))
     }
+    pinFor?.let { (pp, ed) -> PinDialog(pp, { pinFor = null; if (ed) editing = pp else onPick(pp) }, { pinFor = null }) }
     editing?.let { ProfileEditor(st, it) { editing = null } }
+}
+
+@Composable
+fun PinDialog(p: Profile, ok: () -> Unit, close: () -> Unit) {
+    var code by remember { mutableStateOf("") }
+    var err by remember { mutableStateOf(false) }
+    val shake = remember { Animatable(0f) }
+    LaunchedEffect(code) { if (code.length == 4) { if (hashPin(code) == p.pin) ok() else err = true } }
+    LaunchedEffect(err) {
+        if (err) {
+            repeat(3) { shake.animateTo(18f, tween(ms(50))); shake.animateTo(-18f, tween(ms(50))) }
+            shake.animateTo(0f, tween(ms(50))); code = ""; err = false
+        }
+    }
+    Dialog(close) {
+        Column(Modifier.clip(RoundedCornerShape(18.dp)).background(Color(0xFF1A1A1A)).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Avatar(p.avatar, 64.dp)
+            Text(p.name, Modifier.padding(top = 8.dp), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(if (err) "Wrong PIN" else "Enter PIN", Modifier.padding(top = 4.dp, bottom = 14.dp), color = if (err) ACC else Color.Gray)
+            Row(Modifier.graphicsLayer { translationX = shake.value }, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                repeat(4) { i -> Box(Modifier.size(14.dp).clip(CircleShape).background(if (i < code.length) ACC else Color(0xFF444444))) }
+            }
+            Spacer(Modifier.height(18.dp))
+            val rows = listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("", "0", "⌫"))
+            Column(Modifier.width(230.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                rows.forEach { r ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        r.forEach { k ->
+                            if (k.isEmpty()) Spacer(Modifier.weight(1f).height(54.dp))
+                            else Key(k, Modifier.weight(1f), 54.dp) { if (k == "⌫") code = code.dropLast(1) else if (code.length < 4 && !err) code += k }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -291,6 +364,9 @@ fun ProfileEditor(st: Store, p: Profile, close: () -> Unit) {
     var av by remember { mutableStateOf(p.avatar) }
     var kids by remember { mutableStateOf(p.kids) }
     var url by remember { mutableStateOf("") }
+    var lock by remember { mutableStateOf(p.pin.isNotEmpty()) }
+    var pin by remember { mutableStateOf("") }
+    val pinOk = !lock || (pin.isEmpty() && p.pin.isNotEmpty()) || pin.length == 4
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { u -> u?.let { av = st.copyImage(it) } }
     AlertDialog(onDismissRequest = close, containerColor = Color(0xFF1A1A1A),
         title = { Text(if (exists) "Edit profile" else "New profile") },
@@ -299,16 +375,26 @@ fun ProfileEditor(st: Store, p: Profile, close: () -> Unit) {
                 Box(Modifier.align(Alignment.CenterHorizontally)) { Avatar(av, 96.dp) }
                 OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth().padding(top = 14.dp), label = { Text("Name") }, singleLine = true)
                 Text("Icon", Modifier.padding(top = 14.dp), color = Color.Gray, fontSize = 13.sp)
-                LazyRow { items(6) { i -> Box(Modifier.padding(4.dp).clickable { av = "b:$i" }) { Avatar("b:$i", 48.dp) } } }
+                LazyRow { items(6) { i -> Box(Modifier.padding(4.dp).focusGlow(RoundedCornerShape(6.dp)).clickable { av = "b:$i" }) { Avatar("b:$i", 48.dp) } } }
                 OutlinedButton({ pick.launch("image/*") }, Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Choose from gallery", color = Color.White) }
                 OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("…or paste an image link") }, singleLine = true,
                     trailingIcon = { TextButton({ st.downloadImage(url) { r -> if (r != null) av = r } }) { Text("GET", color = ACC) } })
                 Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Switch(kids, { kids = it }, colors = SwitchDefaults.colors(checkedTrackColor = ACC)); Text("   Kids profile (colorful kids home)")
+                    Switch(kids, { kids = it }, colors = SwitchDefaults.colors(checkedTrackColor = ACC)); Text("   Kids profile")
                 }
+                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Switch(lock, { lock = it; if (!it) pin = "" }, colors = SwitchDefaults.colors(checkedTrackColor = ACC)); Text("   PIN lock")
+                }
+                if (lock) OutlinedTextField(pin, { if (it.length <= 4 && it.all { c -> c.isDigit() }) pin = it }, Modifier.fillMaxWidth().padding(top = 6.dp),
+                    label = { Text(if (p.pin.isNotEmpty()) "New 4-digit PIN (blank = keep)" else "4-digit PIN") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), visualTransformation = PasswordVisualTransformation())
             }
         },
-        confirmButton = { Button({ if (name.isNotBlank()) { st.upsertProfile(p.copy(name = name.trim(), avatar = av, kids = kids)); close() } }, colors = ButtonDefaults.buttonColors(containerColor = ACC)) { Text("Save") } },
+        confirmButton = {
+            Button({
+                st.upsertProfile(p.copy(name = name.trim(), avatar = av, kids = kids, pin = if (!lock) "" else if (pin.isEmpty()) p.pin else hashPin(pin))); close()
+            }, enabled = name.isNotBlank() && pinOk, colors = ButtonDefaults.buttonColors(containerColor = ACC)) { Text("Save") }
+        },
         dismissButton = {
             Row {
                 if (exists && st.profiles.size > 1) TextButton({ st.deleteProfile(p); close() }) { Text("Delete", color = ACC) }
@@ -318,12 +404,12 @@ fun ProfileEditor(st: Store, p: Profile, close: () -> Unit) {
 }
 
 @Composable
-fun Poster(v: Video, modifier: Modifier = Modifier, progress: Float = 0f, showTitle: Boolean = true, onClick: () -> Unit) {
+fun Poster(v: Video, modifier: Modifier = Modifier, progress: Float = 0f, showTitle: Boolean = true, radius: Dp = RADIUS.dp, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val sc by animateFloatAsState(if (pressed && ANIM_ON && ANIM_POP) 0.93f else 1f, tween(ms(160)), label = "press")
-    Column(modifier.graphicsLayer { scaleX = sc; scaleY = sc }.clickable(src, null, onClick = onClick)) {
-        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(RADIUS.dp)).background(CARD), Alignment.Center) {
+    Column(modifier.graphicsLayer { scaleX = sc; scaleY = sc }.focusGlow(RoundedCornerShape(radius)).clickable(src, null, onClick = onClick)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(radius)).background(CARD), Alignment.Center) {
             if (v.cover.isNotEmpty()) AsyncImage(File(v.cover), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             else Text(v.title.take(1).uppercase(), fontSize = 40.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
             if (progress > 0f) LinearProgressIndicator({ progress }, Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp), color = ACC, trackColor = Color(0x99000000))
@@ -333,13 +419,13 @@ fun Poster(v: Video, modifier: Modifier = Modifier, progress: Float = 0f, showTi
 }
 
 @Composable
-fun ShelfRow(title: String, l: List<Video>, st: Store? = null, open: (Video) -> Unit) {
+fun ShelfRow(title: String, l: List<Video>, st: Store? = null, open: (Video) -> Unit, kids: Boolean = false) {
     Column(Modifier.padding(top = 22.dp)) {
-        Text(title, Modifier.padding(start = 16.dp, bottom = 10.dp), fontSize = 19.sp, fontWeight = FontWeight.Bold)
+        Text(title, Modifier.padding(start = 16.dp, bottom = 10.dp), fontSize = if (kids) 22.sp else 19.sp, fontWeight = FontWeight.Bold)
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(l) { v ->
                 val pr = if (st != null && st.dur(v.id) > 0) st.pos(v.id).toFloat() / st.dur(v.id) else 0f
-                Poster(v, Modifier.width(POSTER.dp), pr) { open(v) }
+                Poster(v, Modifier.width(if (kids) (POSTER + 14).dp else POSTER.dp), pr, radius = if (kids) 18.dp else RADIUS.dp) { open(v) }
             }
         }
     }
@@ -373,7 +459,7 @@ fun ListRow(v: Video, open: (Video) -> Unit) {
 fun DropBox(label: String, items: List<String>, pick: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        Box(Modifier.border(1.dp, Color(0xAAFFFFFF), RoundedCornerShape(3.dp)).clickable { open = true }.padding(horizontal = 12.dp, vertical = 7.dp)) { Text("$label ▾", fontSize = 13.sp) }
+        Box(Modifier.focusGlow(RoundedCornerShape(3.dp)).border(1.dp, Color(0xAAFFFFFF), RoundedCornerShape(3.dp)).clickable { open = true }.padding(horizontal = 12.dp, vertical = 7.dp)) { Text("$label ▾", fontSize = 13.sp) }
         DropdownMenu(open, { open = false }, Modifier.background(Color(0xFF1C1C1C))) {
             items.forEach { DropdownMenuItem({ Text(it) }, { open = false; pick(it) }) }
         }
@@ -385,6 +471,8 @@ fun Hero(f: Video, p: Profile, play: (Video) -> Unit, open: (Video) -> Unit, tog
     val inf = rememberInfiniteTransition(label = "kb")
     val z by inf.animateFloat(1f, 1.1f, infiniteRepeatable(tween(14000, easing = LinearEasing), RepeatMode.Reverse), label = "z")
     val year = java.text.SimpleDateFormat("yyyy", java.util.Locale.getDefault()).format(java.util.Date(f.added))
+    val fr = remember { FocusRequester() }
+    LaunchedEffect(Unit) { if (IS_TV) try { fr.requestFocus() } catch (e: Exception) { } }
     Box(Modifier.fillMaxWidth().height(520.dp).clipToBounds()) {
         if (f.cover.isNotEmpty()) AsyncImage(File(f.cover), null, Modifier.fillMaxSize().graphicsLayer { val s = if (ANIM_ON && ANIM_HERO) z else 1f; scaleX = s; scaleY = s }, contentScale = ContentScale.Crop)
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x99000000), Color.Transparent, Color(0x55000000), BG))))
@@ -397,13 +485,13 @@ fun Hero(f: Video, p: Profile, play: (Video) -> Unit, open: (Video) -> Unit, tog
             Text("${f.category}  •  $year", Modifier.padding(top = 6.dp), fontSize = 13.sp, color = Color(0xFFCCCCCC))
             if (f.desc.isNotBlank()) Text(f.desc, Modifier.padding(top = 8.dp), color = Color(0xFFE5E5E5), fontSize = 14.sp, lineHeight = 19.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
             Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button({ play(f) }, Modifier.weight(1f).height(46.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black), shape = RoundedCornerShape(RADIUS.dp)) {
+                Button({ play(f) }, Modifier.weight(1f).height(46.dp).focusGlow().focusRequester(fr), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black), shape = RoundedCornerShape(RADIUS.dp)) {
                     Icon(Icons.Default.PlayArrow, null); Text(" " + L("play", "Play"), fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
-                Button({ open(f) }, Modifier.weight(1f).height(46.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xAA6D6D6E), contentColor = Color.White), shape = RoundedCornerShape(RADIUS.dp)) {
+                Button({ open(f) }, Modifier.weight(1f).height(46.dp).focusGlow(), colors = ButtonDefaults.buttonColors(containerColor = Color(0xAA6D6D6E), contentColor = Color.White), shape = RoundedCornerShape(RADIUS.dp)) {
                     Icon(Icons.Default.Info, null); Text(" " + L("moreinfo", "More Info"), fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
                 }
-                Box(Modifier.size(46.dp).clip(RoundedCornerShape(RADIUS.dp)).background(Color(0xAA6D6D6E)).clickable { toggle(f) }, Alignment.Center) {
+                Box(Modifier.size(46.dp).clip(RoundedCornerShape(RADIUS.dp)).background(Color(0xAA6D6D6E)).focusGlow().clickable { toggle(f) }, Alignment.Center) {
                     Icon(if (f.id in p.list) Icons.Default.Check else Icons.Default.Add, null)
                 }
             }
@@ -412,21 +500,45 @@ fun Hero(f: Video, p: Profile, play: (Video) -> Unit, open: (Video) -> Unit, tog
 }
 
 @Composable
-fun KidsHeader(p: Profile, all: List<Video>, open: (Video) -> Unit) {
-    Box(Modifier.fillMaxWidth().height(430.dp)) {
-        Stars(Modifier.fillMaxSize())
-        Column(Modifier.align(Alignment.BottomStart).padding(bottom = 14.dp)) {
-            Text("Hi ${p.name}!", Modifier.padding(horizontal = 20.dp), fontSize = 30.sp, fontWeight = FontWeight.Black)
-            Text("Pick something fun to watch", Modifier.padding(start = 20.dp, bottom = 14.dp), color = Color(0xFFFFE9C7))
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(all.take(10)) { v -> Poster(v, Modifier.width(112.dp).border(2.dp, Color(0x55FFFFFF), RoundedCornerShape(RADIUS.dp)), showTitle = false) { open(v) } }
-            }
+fun KidsMark() {
+    val cs = listOf(Color(0xFFFF5FA2), Color(0xFFFFD400), Color(0xFF3DDCFF), Color(0xFF7CFF6B))
+    Text(buildAnnotatedString { "kids".forEachIndexed { i, c -> withStyle(SpanStyle(color = cs[i])) { append(c) } } }, fontSize = 28.sp, fontWeight = FontWeight.Black)
+}
+
+@Composable
+fun KidCard(v: Video, i: Int, open: (Video) -> Unit) {
+    val t = rememberInfiniteTransition(label = "float")
+    val y by t.animateFloat(-6f, 6f, infiniteRepeatable(tween(1500 + i * 230, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "y")
+    val shape = RoundedCornerShape(18.dp)
+    Box(Modifier.width(if (i == 0) 142.dp else 120.dp).aspectRatio(2f / 3f).graphicsLayer { translationY = if (ANIM_ON) y else 0f }
+        .shadow(16.dp, shape, ambientColor = Color.White, spotColor = Color.White).clip(shape).background(CARD).border(3.dp, Color.White.copy(alpha = .9f), shape)
+        .focusGlow(shape).clickable { open(v) }) {
+        if (v.cover.isNotEmpty()) AsyncImage(File(v.cover), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else Text(v.title.take(1).uppercase(), Modifier.align(Alignment.Center), fontSize = 40.sp, fontWeight = FontWeight.Black)
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC000000)))).padding(8.dp)) {
+            Text(v.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
 @Composable
-fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, add: () -> Unit, switch: () -> Unit, search: () -> Unit, toggle: (Video) -> Unit, settings: () -> Unit, manage: () -> Unit) {
+fun KidsHeader(p: Profile, all: List<Video>, open: (Video) -> Unit) {
+    Box(Modifier.fillMaxWidth().height(500.dp)) {
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color(0xFF0B0B3F), 0.4f to Color(0xFF3A1B8F), 0.7f to Color(0xFFB5338A), 0.9f to Color(0xFFFF9150), 1f to BG)))
+        Stars(Modifier.fillMaxSize())
+        Column(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(top = 110.dp, start = 20.dp, end = 20.dp)) {
+            Text("Hi ${p.name}!", fontSize = 36.sp, fontWeight = FontWeight.Black)
+            Text("What do you want to watch?", Modifier.padding(top = 2.dp), color = Color(0xFFFFE9C7), fontSize = 15.sp)
+        }
+        LazyRow(Modifier.align(Alignment.BottomStart).padding(bottom = 24.dp), contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Bottom) {
+            itemsIndexed(all.take(12)) { i, v -> KidCard(v, i, open) }
+        }
+    }
+}
+
+@Composable
+fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, add: () -> Unit, nav: (Scr) -> Unit, manage: () -> Unit, toggle: (Video) -> Unit) {
     var filter by remember { mutableStateOf("All") }
     var grid by remember { mutableStateOf(true) }
     var sort by remember { mutableStateOf("Newest") }
@@ -435,7 +547,7 @@ fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, ad
     val tabs = listOf("All") + cats + "My List"
     if (filter !in tabs) filter = "All"
     val kids = p.kids
-    val bg = if (kids) Brush.verticalGradient(listOf(Color(0xFF1B1464), Color(0xFF6A2BD9), Color(0xFFE8588F), Color(0xFFFFA24D), BG), 0f, 2000f) else SolidColor(BG)
+    val bg: Brush = if (kids) Brush.verticalGradient(listOf(Color(0xFF2A1465), BG), 0f, 900f) else SolidColor(BG)
 
     Box(Modifier.fillMaxSize().background(bg)) {
         AnimatedContent(filter, Modifier.fillMaxSize().pointerInput(tabs, filter) {
@@ -462,7 +574,7 @@ fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, ad
                         Text("Nothing to watch yet", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                         if (SHOW_UPLOAD) {
                             Text("Add your own videos with a title, description and cover.", color = Color.Gray, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 10.dp))
-                            Button(add, colors = ButtonDefaults.buttonColors(containerColor = ACC), shape = RoundedCornerShape(RADIUS.dp)) { Text("Upload your first video", Modifier.padding(6.dp)) }
+                            Button(add, Modifier.focusGlow(), colors = ButtonDefaults.buttonColors(containerColor = ACC), shape = RoundedCornerShape(RADIUS.dp)) { Text("Upload your first video", Modifier.padding(6.dp)) }
                         } else Text("Turn on Upload in Settings to add videos.", color = Color.Gray, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 10.dp))
                     }
                 } else if (f == "All") {
@@ -475,7 +587,7 @@ fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, ad
                         add(Triple(L("recent", "Recently Added"), all, false))
                         cats.forEach { c -> add(Triple(c, all.filter { it.category == c }, false)) }
                     }
-                    itemsIndexed(shelves) { i, (t, l, prog) -> Reveal(i) { ShelfRow(t, l, if (prog) st else null, open) } }
+                    itemsIndexed(shelves) { i, (t, l, prog) -> Reveal(i) { ShelfRow(t, l, if (prog) st else null, open, kids) } }
                 } else {
                     item { Spacer(Modifier.height(140.dp)) }
                     item {
@@ -497,32 +609,20 @@ fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, ad
                 }
             }
         }
-        // Netflix-style top bar: logo + profile menu, then search + pill tabs
-        var menu by remember { mutableStateOf(false) }
-        Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(BG.copy(alpha = .95f), Color.Transparent))).statusBarsPadding().padding(top = 6.dp, bottom = 22.dp)) {
+        // top bar: logo + profile menu (all navigation lives in the menu), then search + pill tabs
+        Column(Modifier.fillMaxWidth().background(if (kids) SolidColor(Color.Transparent) else Brush.verticalGradient(listOf(BG.copy(alpha = .95f), Color.Transparent))).statusBarsPadding().padding(top = 6.dp, bottom = 22.dp)) {
             Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Logo(24, L("homeName", "").ifBlank { null }); Spacer(Modifier.weight(1f))
-                if (kids) Text("kids", color = Color(0xFFFFD400), fontWeight = FontWeight.Black, fontSize = 20.sp, modifier = Modifier.padding(end = 12.dp))
-                Box {
-                    Row(Modifier.clickable { menu = true }.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Avatar(p.avatar, 32.dp); Text("▾", Modifier.padding(start = 4.dp), fontSize = 13.sp)
-                    }
-                    DropdownMenu(menu, { menu = false }, Modifier.background(Color(0xF2141414))) {
-                        DropdownMenuItem({ Text(L("menuManage", "Manage Profiles")) }, { menu = false; manage() }, leadingIcon = { Icon(Icons.Default.Edit, null) })
-                        DropdownMenuItem({ Text(L("menuSwitch", "Switch Profile")) }, { menu = false; switch() }, leadingIcon = { Icon(Icons.Default.Person, null) })
-                        DropdownMenuItem({ Text(L("menuSettings", "Account & Settings")) }, { menu = false; settings() }, leadingIcon = { Icon(Icons.Default.Settings, null) })
-                        HorizontalDivider(color = Color(0xFF333333))
-                        DropdownMenuItem({ Text(L("menuOut", "Sign out"), Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }, { menu = false; switch() })
-                    }
-                }
+                if (kids) KidsMark() else Logo(24, L("homeName", "").ifBlank { null })
+                Spacer(Modifier.weight(1f))
+                ProfileMenu(p, nav, manage)
             }
             Spacer(Modifier.height(8.dp))
             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                item { Box(Modifier.size(40.dp).clip(CircleShape).clickable(onClick = search), Alignment.Center) { Icon(Icons.Default.Search, null, Modifier.size(26.dp)) } }
+                item { Box(Modifier.size(40.dp).focusGlow(CircleShape).clip(CircleShape).clickable { nav(Scr.SEARCH) }, Alignment.Center) { Icon(Icons.Default.Search, null, Modifier.size(26.dp)) } }
                 items(tabs) { c ->
                     val on = c == filter
                     val bgc by animateColorAsState(if (on) Color.White else Color.Transparent, tween(ms(250)), label = "pill")
-                    Box(Modifier.clip(RoundedCornerShape(50)).background(bgc).clickable(remember { MutableInteractionSource() }, null) { filter = c }.padding(horizontal = 18.dp, vertical = 9.dp)) {
+                    Box(Modifier.focusGlow(RoundedCornerShape(50)).clip(RoundedCornerShape(50)).background(bgc).clickable(remember { MutableInteractionSource() }, null) { filter = c }.padding(horizontal = 18.dp, vertical = 9.dp)) {
                         Text(when (c) { "All" -> L("home", "Home"); "My List" -> L("mylist", "My List"); else -> c }, fontSize = 15.sp,
                             fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) Color.Black else Color.White, maxLines = 1)
                     }
@@ -547,16 +647,16 @@ fun KeyGrid(q: String, set: (String) -> Unit) {
 }
 
 @Composable
-fun Key(label: String, modifier: Modifier, onClick: () -> Unit) {
+fun Key(label: String, modifier: Modifier, h: Dp = 42.dp, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pr by src.collectIsPressedAsState()
-    Box(modifier.height(42.dp).clip(RoundedCornerShape(3.dp)).background(if (pr) ACC else Color(0xFF2C2C2C)).clickable(src, null, onClick = onClick), Alignment.Center) {
+    Box(modifier.height(h).focusGlow(RoundedCornerShape(4.dp)).clip(RoundedCornerShape(4.dp)).background(if (pr) ACC else Color(0xFF2C2C2C)).clickable(src, null, onClick = onClick), Alignment.Center) {
         Text(label, fontSize = 17.sp, color = Color(0xFFD0D0D0))
     }
 }
 
 @Composable
-fun Search(st: Store, open: (Video) -> Unit) {
+fun Search(st: Store, p: Profile, nav: (Scr) -> Unit, manage: () -> Unit, open: (Video) -> Unit) {
     var q by remember { mutableStateOf("") }
     var kb by remember { mutableStateOf(SEARCH_GRID) }
     val r = st.videos.filter { q.isBlank() || it.title.contains(q, true) || it.category.contains(q, true) || it.desc.contains(q, true) }.sortedBy { it.title.lowercase() }
@@ -574,7 +674,7 @@ fun Search(st: Store, open: (Video) -> Unit) {
         val wide = maxWidth >= 600.dp
         if (wide) Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Column(Modifier.width(280.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(L("searchTitle", "Search"), fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(L("searchTitle", "Search"), Modifier.weight(1f), fontSize = 28.sp, fontWeight = FontWeight.Black); ProfileMenu(p, nav, manage) }
                 Field(); if (kb) KeyGrid(q) { q = it }; Suggest()
             }
             LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -586,6 +686,7 @@ fun Search(st: Store, open: (Video) -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(L("searchTitle", "Search"), Modifier.weight(1f), fontSize = 28.sp, fontWeight = FontWeight.Black)
                         TextButton({ kb = !kb }) { Text(if (kb) "Hide letters" else "Letter grid", color = ACC) }
+                        ProfileMenu(p, nav, manage)
                     }
                     Field()
                     AnimatedVisibility(kb, enter = expandVertically(tween(ms(300))) + fadeIn(tween(ms(300))), exit = shrinkVertically(tween(ms(250))) + fadeOut(tween(ms(200)))) { KeyGrid(q) { q = it } }
@@ -640,7 +741,7 @@ fun Detail(st: Store, p: Profile, v: Video, back: () -> Unit, play: () -> Unit, 
 
 @Composable
 fun Action(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    Column(Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.clip(RoundedCornerShape(8.dp)).focusGlow(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(icon, null, Modifier.size(26.dp)); Text(label, fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 4.dp), maxLines = 1)
     }
 }
