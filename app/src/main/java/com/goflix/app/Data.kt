@@ -53,7 +53,13 @@ val LABELS = listOf(
     Triple("recent", "Recently Added row", "Recently Added"),
     Triple("who", "Profile screen title", "Who's watching?"),
     Triple("manage", "Manage profiles button", "MANAGE PROFILES"),
-    Triple("addprofile", "Add profile label", "Add Profile")
+    Triple("addprofile", "Add profile label", "Add Profile"),
+    Triple("play", "Play button", "Play"),
+    Triple("moreinfo", "More Info button", "More Info"),
+    Triple("menuManage", "Profile menu: manage", "Manage Profiles"),
+    Triple("menuSwitch", "Profile menu: switch", "Switch Profile"),
+    Triple("menuSettings", "Profile menu: settings", "Account & Settings"),
+    Triple("menuOut", "Profile menu: sign out", "Sign out")
 )
 fun L(k: String, d: String): String = LBL[k]?.takeIf { it.isNotBlank() } ?: d
 

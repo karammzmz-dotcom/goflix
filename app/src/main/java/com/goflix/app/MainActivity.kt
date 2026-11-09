@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -30,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -62,6 +64,8 @@ class MainActivity : ComponentActivity() {
 
 enum class Scr { INTRO, PROFILES, PINTRO, HOME, SEARCH, ADD, DETAIL, PLAYER, SETTINGS }
 
+fun rank(s: Scr) = when (s) { Scr.HOME -> 0; Scr.SEARCH -> 1; Scr.SETTINGS -> 2; else -> 3 }
+
 fun TextStyle.f(ff: FontFamily) = copy(fontFamily = ff)
 fun Typography.withFont(f: FontFamily) = copy(
     displayLarge = displayLarge.f(f), displayMedium = displayMedium.f(f), displaySmall = displaySmall.f(f),
@@ -77,6 +81,7 @@ fun GoflixApp(st: Store) {
     var cur by remember { mutableStateOf<Profile?>(null) }
     var sel by remember { mutableStateOf<Video?>(null) }
     var edit by remember { mutableStateOf<Video?>(null) }
+    var startManage by remember { mutableStateOf(false) }
     fun click() { if (st.flag("sound")) Sfx.play(ctx, R.raw.click, st.str("clickPath")) }
 
     LaunchedEffect(scr) {
@@ -91,35 +96,31 @@ fun GoflixApp(st: Store) {
         colorScheme = darkColorScheme(primary = ACC, background = BG, surface = BG, surfaceVariant = CARD, onSurface = Color.White, onBackground = Color.White),
         typography = Typography().withFont(FONT)
     ) {
-        val tabScreens = setOf(Scr.HOME, Scr.SEARCH, Scr.SETTINGS)
-        val showBar = cur != null && scr in tabScreens
-        Scaffold(containerColor = BG, topBar = {
-            if (showBar) TopTabs(scr, cur, go = { scr = it }, onAdd = { edit = null; scr = Scr.ADD }, onAvatar = { scr = Scr.PROFILES })
+        val showBar = cur != null && (scr == Scr.HOME || scr == Scr.SEARCH || scr == Scr.SETTINGS)
+        Scaffold(containerColor = BG, bottomBar = {
+            if (showBar) NavBar(scr, { scr = it }) { edit = null; scr = Scr.ADD }
         }) { pad ->
-            AnimatedContent(scr, Modifier.fillMaxSize().padding(top = pad.calculateTopPadding()), label = "screen", transitionSpec = {
-                if (initialState in tabScreens && targetState in tabScreens) {
-                    // Quick cross-fade between tabs — a real but snappy animation, not a dead instant cut.
-                    val d = ms(110)
-                    (fadeIn(tween(d)) togetherWith fadeOut(tween(d))) using SizeTransform(clip = false) { _, _ -> tween(d) }
-                } else {
-                    val d = ms(120)
-                    if (!ANIM_ON || ANIM_STYLE == "none") EnterTransition.None togetherWith ExitTransition.None
-                    else when (ANIM_STYLE) {
-                        "fade" -> fadeIn(tween(d)) togetherWith fadeOut(tween(d))
-                        "scale" -> (scaleIn(tween(d), 0.92f) + fadeIn(tween(d))) togetherWith fadeOut(tween(d / 2))
-                        else -> (slideInHorizontally(tween(d)) { it / 5 } + fadeIn(tween(d))) togetherWith (slideOutHorizontally(tween(d)) { -it / 6 } + fadeOut(tween(d / 2)))
-                    }
+            AnimatedContent(scr, Modifier.fillMaxSize().padding(bottom = pad.calculateBottomPadding()), label = "screen", transitionSpec = {
+                val d = ms(450)
+                val e = FastOutSlowInEasing
+                val dir = if (rank(targetState) >= rank(initialState)) 1 else -1
+                if (!ANIM_ON || ANIM_STYLE == "none") EnterTransition.None togetherWith ExitTransition.None
+                else when (ANIM_STYLE) {
+                    "fade" -> fadeIn(tween(d, easing = e)) togetherWith fadeOut(tween(d, easing = e))
+                    "scale" -> (scaleIn(tween(d, easing = e), 0.9f) + fadeIn(tween(d, easing = e))) togetherWith (scaleOut(tween(d, easing = e), 1.06f) + fadeOut(tween(d / 2)))
+                    else -> (slideInHorizontally(tween(d, easing = e)) { dir * it } + fadeIn(tween(d, easing = e))) togetherWith (slideOutHorizontally(tween(d, easing = e)) { -dir * it / 3 } + fadeOut(tween(d, easing = e)))
                 }
             }) { s ->
                 Box(Modifier.fillMaxSize()) {
                     when (s) {
                         Scr.INTRO -> Splash(st, st.str("introPath"), true) { scr = Scr.PROFILES }
-                        Scr.PROFILES -> Profiles(st) { cur = it; click(); scr = Scr.PINTRO }
+                        Scr.PROFILES -> Profiles(st, startManage) { cur = it; click(); scr = Scr.PINTRO }
                         Scr.PINTRO -> Splash(st, st.str("pIntroPath"), false) { scr = Scr.HOME }
                         Scr.HOME -> cur?.let { p ->
                             Home(st, p, open = { click(); sel = it; scr = Scr.DETAIL }, play = { sel = it; scr = Scr.PLAYER },
-                                add = { edit = null; scr = Scr.ADD },
-                                toggle = { v -> cur = st.toggleList(p, v.id) })
+                                add = { edit = null; scr = Scr.ADD }, switch = { startManage = false; scr = Scr.PROFILES }, search = { scr = Scr.SEARCH },
+                                toggle = { v -> cur = st.toggleList(p, v.id) },
+                                settings = { scr = Scr.SETTINGS }, manage = { startManage = true; scr = Scr.PROFILES })
                         }
                         Scr.SEARCH -> Search(st) { click(); sel = it; scr = Scr.DETAIL }
                         Scr.ADD -> AddEdit(st, edit) { scr = Scr.HOME }
@@ -128,7 +129,7 @@ fun GoflixApp(st: Store) {
                                 toggle = { cur = st.toggleList(p, v.id) }, open = { sel = it })
                         } }
                         Scr.PLAYER -> sel?.let { Player(st, it) { scr = Scr.DETAIL } }
-                        Scr.SETTINGS -> cur?.let { p -> SettingsScreen(st, p) { scr = Scr.PROFILES } }
+                        Scr.SETTINGS -> cur?.let { p -> SettingsScreen(st, p) { startManage = false; scr = Scr.PROFILES } }
                     }
                 }
             }
@@ -136,32 +137,15 @@ fun GoflixApp(st: Store) {
     }
 }
 
-/** The ONE top bar for the app: logo + text tabs (red underline on the active one) on the left,
- *  bell + profile avatar on the right. Tapping a tab switches instantly — no animation, no delay. */
 @Composable
-fun TopTabs(scr: Scr, p: Profile?, go: (Scr) -> Unit, onAdd: () -> Unit, onAvatar: () -> Unit) {
-    val tabs = buildList {
-        this += Scr.HOME to L("home", "Home")
-        this += Scr.SEARCH to L("search", "Search")
-        if (SHOW_UPLOAD) this += Scr.ADD to L("upload", "Upload")
-        this += Scr.SETTINGS to L("settings", "Settings")
-    }
-    Column(Modifier.fillMaxWidth().background(BG).statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Logo(22)
-            Row(Modifier.weight(1f).padding(start = 20.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
-                tabs.forEach { (s, label) ->
-                    val on = scr == s
-                    Column(Modifier.clickable(remember { MutableInteractionSource() }, null) { if (s == Scr.ADD) onAdd() else go(s) }, horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(label, fontSize = 14.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = if (on) Color.White else Color(0xFFB3B3B3), maxLines = 1)
-                        Box(Modifier.padding(top = 4.dp).height(2.dp).width(if (on) 18.dp else 0.dp).background(ACC))
-                    }
-                }
-            }
-            if (p?.kids == true) Text("kids", color = Color(0xFFFFD400), fontWeight = FontWeight.Black, fontSize = 18.sp, modifier = Modifier.padding(end = 4.dp))
-            IconButton({}) { Icon(Icons.Default.Notifications, null, Modifier.size(22.dp)) }
-            if (p != null) Box(Modifier.padding(start = 2.dp).clip(RoundedCornerShape(4.dp)).clickable(onClick = onAvatar)) { Avatar(p.avatar, 28.dp) }
-        }
+fun NavBar(scr: Scr, go: (Scr) -> Unit, add: () -> Unit) {
+    NavigationBar(containerColor = BG, tonalElevation = 0.dp) {
+        val c = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, selectedTextColor = Color.White, indicatorColor = ACC,
+            unselectedIconColor = Color(0xFF8A8A8A), unselectedTextColor = Color(0xFF8A8A8A))
+        NavigationBarItem(scr == Scr.HOME, { go(Scr.HOME) }, { Icon(Icons.Default.Home, null) }, label = { Text(L("home", "Home"), fontSize = 11.sp, maxLines = 1) }, colors = c)
+        NavigationBarItem(scr == Scr.SEARCH, { go(Scr.SEARCH) }, { Icon(Icons.Default.Search, null) }, label = { Text(L("search", "Search"), fontSize = 11.sp, maxLines = 1) }, colors = c)
+        if (SHOW_UPLOAD) NavigationBarItem(false, add, { Icon(Icons.Default.Add, null) }, label = { Text(L("upload", "Upload"), fontSize = 11.sp, maxLines = 1) }, colors = c)
+        NavigationBarItem(scr == Scr.SETTINGS, { go(Scr.SETTINGS) }, { Icon(Icons.Default.Settings, null) }, label = { Text(L("settings", "Settings"), fontSize = 11.sp, maxLines = 1) }, colors = c)
     }
 }
 
@@ -174,8 +158,10 @@ fun Logo(size: Int = 34, text: String? = null) {
 
 @Composable
 fun Reveal(i: Int, content: @Composable () -> Unit) {
-    // Content renders immediately — no artificial per-row stagger delay.
-    content()
+    var on by remember { mutableStateOf(!(ANIM_ON && ANIM_STAGGER)) }
+    LaunchedEffect(Unit) { if (!on) { delay(ms(70).toLong() * i.coerceAtMost(8)); on = true } }
+    val a by animateFloatAsState(if (on) 1f else 0f, tween(ms(450)), label = "reveal")
+    Box(Modifier.graphicsLayer { alpha = a; translationY = (1f - a) * 40f }) { content() }
 }
 
 @Composable
@@ -220,15 +206,15 @@ fun Splash(st: Store, path: String, defaultSound: Boolean, done: () -> Unit) {
             val al = remember { Animatable(0f) }
             LaunchedEffect(Unit) {
                 var mp: MediaPlayer? = null
-                var t = 900L
+                var t = 3400L
                 if (st.flag("sound")) {
                     mp = try { if (has) MediaPlayer().apply { setDataSource(path); prepare() } else MediaPlayer.create(ctx, R.raw.intro) } catch (e: Exception) { null }
-                    mp?.start(); if (mp != null && has) t = mp.duration.toLong().coerceIn(900L, 3000L)
+                    mp?.start(); if (mp != null && has) t = mp.duration.toLong().coerceIn(2500L, 9000L)
                 }
                 coroutineScope {
-                    launch { al.animateTo(1f, tween(220)) }
-                    launch { sc.animateTo(1.12f, tween(t.toInt(), easing = LinearEasing)) }
-                    delay(t - 180); al.animateTo(0f, tween(180))
+                    launch { al.animateTo(1f, tween(800)) }
+                    launch { sc.animateTo(1.35f, tween(t.toInt(), easing = LinearEasing)) }
+                    delay(t - 400); al.animateTo(0f, tween(400))
                 }
                 mp?.release(); finish()
             }
@@ -256,8 +242,8 @@ fun Avatar(a: String, size: Dp, round: Dp = (size.value * 0.06f).dp) {
 }
 
 @Composable
-fun Profiles(st: Store, onPick: (Profile) -> Unit) {
-    var manage by remember { mutableStateOf(false) }
+fun Profiles(st: Store, startManage: Boolean, onPick: (Profile) -> Unit) {
+    var manage by remember { mutableStateOf(startManage) }
     var editing by remember { mutableStateOf<Profile?>(null) }
     Column(Modifier.fillMaxSize().background(Color(0xFF141414)).statusBarsPadding().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(10.dp)); Logo(26)
@@ -395,21 +381,30 @@ fun DropBox(label: String, items: List<String>, pick: (String) -> Unit) {
 }
 
 @Composable
-fun Hero(f: Video, p: Profile, play: (Video) -> Unit, toggle: (Video) -> Unit) {
+fun Hero(f: Video, p: Profile, play: (Video) -> Unit, open: (Video) -> Unit, toggle: (Video) -> Unit) {
     val inf = rememberInfiniteTransition(label = "kb")
     val z by inf.animateFloat(1f, 1.1f, infiniteRepeatable(tween(14000, easing = LinearEasing), RepeatMode.Reverse), label = "z")
-    Box(Modifier.fillMaxWidth().height(540.dp).clipToBounds()) {
+    val year = java.text.SimpleDateFormat("yyyy", java.util.Locale.getDefault()).format(java.util.Date(f.added))
+    Box(Modifier.fillMaxWidth().height(520.dp).clipToBounds()) {
         if (f.cover.isNotEmpty()) AsyncImage(File(f.cover), null, Modifier.fillMaxSize().graphicsLayer { val s = if (ANIM_ON && ANIM_HERO) z else 1f; scaleX = s; scaleY = s }, contentScale = ContentScale.Crop)
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x77000000), Color.Transparent, Color.Transparent, BG))))
-        Column(Modifier.align(Alignment.BottomStart).padding(horizontal = 20.dp, vertical = 18.dp)) {
-            Text(f.title, fontSize = 32.sp, fontWeight = FontWeight.Black, lineHeight = 36.sp)
-            if (f.desc.isNotBlank()) Text(f.desc, Modifier.padding(top = 6.dp), color = Color(0xFFDDDDDD), fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button({ play(f) }, Modifier.weight(1f).height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black), shape = RoundedCornerShape(RADIUS.dp)) {
-                    Icon(Icons.Default.PlayArrow, null); Text(" Play", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x99000000), Color.Transparent, Color(0x55000000), BG))))
+        Column(Modifier.align(Alignment.BottomStart).padding(start = 20.dp, end = 20.dp, bottom = 26.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(APP_NAME.take(1), color = ACC, fontWeight = FontWeight.Black, fontSize = 24.sp, modifier = Modifier.padding(end = 8.dp))
+                Text(f.category.uppercase(), fontSize = 12.sp, letterSpacing = 4.sp, color = Color(0xFFDDDDDD), fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+            Text(f.title, Modifier.padding(top = 6.dp), fontSize = 38.sp, fontWeight = FontWeight.Black, lineHeight = 40.sp)
+            Text("${f.category}  •  $year", Modifier.padding(top = 6.dp), fontSize = 13.sp, color = Color(0xFFCCCCCC))
+            if (f.desc.isNotBlank()) Text(f.desc, Modifier.padding(top = 8.dp), color = Color(0xFFE5E5E5), fontSize = 14.sp, lineHeight = 19.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button({ play(f) }, Modifier.weight(1f).height(46.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black), shape = RoundedCornerShape(RADIUS.dp)) {
+                    Icon(Icons.Default.PlayArrow, null); Text(" " + L("play", "Play"), fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
-                Button({ toggle(f) }, Modifier.weight(1f).height(48.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0x88555555), contentColor = Color.White), shape = RoundedCornerShape(RADIUS.dp)) {
-                    Icon(if (f.id in p.list) Icons.Default.Check else Icons.Default.Add, null); Text(" " + L("mylist", "My List"), fontWeight = FontWeight.Bold, maxLines = 1)
+                Button({ open(f) }, Modifier.weight(1f).height(46.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xAA6D6D6E), contentColor = Color.White), shape = RoundedCornerShape(RADIUS.dp)) {
+                    Icon(Icons.Default.Info, null); Text(" " + L("moreinfo", "More Info"), fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+                }
+                Box(Modifier.size(46.dp).clip(RoundedCornerShape(RADIUS.dp)).background(Color(0xAA6D6D6E)).clickable { toggle(f) }, Alignment.Center) {
+                    Icon(if (f.id in p.list) Icons.Default.Check else Icons.Default.Add, null)
                 }
             }
         }
@@ -431,20 +426,37 @@ fun KidsHeader(p: Profile, all: List<Video>, open: (Video) -> Unit) {
 }
 
 @Composable
-fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, add: () -> Unit, toggle: (Video) -> Unit) {
+fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, add: () -> Unit, switch: () -> Unit, search: () -> Unit, toggle: (Video) -> Unit, settings: () -> Unit, manage: () -> Unit) {
     var filter by remember { mutableStateOf("All") }
     var grid by remember { mutableStateOf(true) }
     var sort by remember { mutableStateOf("Newest") }
     val all = st.videos.sortedByDescending { it.added }
     val cats = all.map { it.category }.distinct()
-    if (filter != "All" && filter != "My List" && filter !in cats) filter = "All"
+    val tabs = listOf("All") + cats + "My List"
+    if (filter !in tabs) filter = "All"
     val kids = p.kids
     val bg = if (kids) Brush.verticalGradient(listOf(Color(0xFF1B1464), Color(0xFF6A2BD9), Color(0xFFE8588F), Color(0xFFFFA24D), BG), 0f, 2000f) else SolidColor(BG)
 
     Box(Modifier.fillMaxSize().background(bg)) {
-        Crossfade(filter, Modifier.fillMaxSize(), tween(ms(120)), label = "filter") { f ->
+        AnimatedContent(filter, Modifier.fillMaxSize().pointerInput(tabs, filter) {
+            var dx = 0f
+            detectHorizontalDragGestures(onDragStart = { dx = 0f }, onDragEnd = {
+                val i = tabs.indexOf(filter)
+                if (dx < -140f && i < tabs.lastIndex) filter = tabs[i + 1] else if (dx > 140f && i > 0) filter = tabs[i - 1]
+            }) { _, d -> dx += d }
+        }, label = "filter", transitionSpec = {
+            val d = ms(450)
+            val e = FastOutSlowInEasing
+            val dir = if (tabs.indexOf(targetState) >= tabs.indexOf(initialState)) 1 else -1
+            if (!ANIM_ON || ANIM_STYLE == "none") EnterTransition.None togetherWith ExitTransition.None
+            else when (ANIM_STYLE) {
+                "fade" -> fadeIn(tween(d, easing = e)) togetherWith fadeOut(tween(d, easing = e))
+                "scale" -> (scaleIn(tween(d, easing = e), 0.92f) + fadeIn(tween(d, easing = e))) togetherWith (scaleOut(tween(d, easing = e), 0.92f) + fadeOut(tween(d, easing = e)))
+                else -> (slideInHorizontally(tween(d, easing = e)) { dir * it / 2 } + fadeIn(tween(d, easing = e))) togetherWith (slideOutHorizontally(tween(d, easing = e)) { -dir * it / 2 } + fadeOut(tween(d / 2, easing = e)))
+            }
+        }) { f ->
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
-                if (all.isEmpty()) item {
+                if (f == "All" && all.isEmpty()) item {
                     Column(Modifier.fillParentMaxSize().padding(36.dp), Arrangement.Center, Alignment.CenterHorizontally) {
                         Logo(40); Spacer(Modifier.height(28.dp))
                         Text("Nothing to watch yet", fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -454,7 +466,7 @@ fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, ad
                         } else Text("Turn on Upload in Settings to add videos.", color = Color.Gray, textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 10.dp))
                     }
                 } else if (f == "All") {
-                    item { if (kids) KidsHeader(p, all, open) else Hero(all.first(), p, play, toggle) }
+                    item { if (kids) KidsHeader(p, all, open) else Hero(all.first(), p, play, open, toggle) }
                     val shelves = buildList<Triple<String, List<Video>, Boolean>> {
                         val cont = all.filter { val po = st.pos(it.id); val d = st.dur(it.id); po > 5000 && d > 0 && po < d - 5000 }
                         if (cont.isNotEmpty()) add(Triple(L("cont", "Continue Watching"), cont, true))
@@ -485,16 +497,34 @@ fun Home(st: Store, p: Profile, open: (Video) -> Unit, play: (Video) -> Unit, ad
                 }
             }
         }
-        // Category filter strip only — logo/search/bell/avatar already live in the one global top bar.
-        if (all.isNotEmpty()) Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(BG.copy(alpha = .92f), Color.Transparent))).padding(top = 10.dp, bottom = 22.dp)) {
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                items(listOf("All") + cats + "My List") { c ->
+        // Netflix-style top bar: logo + profile menu, then search + pill tabs
+        var menu by remember { mutableStateOf(false) }
+        Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(BG.copy(alpha = .95f), Color.Transparent))).statusBarsPadding().padding(top = 6.dp, bottom = 22.dp)) {
+            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Logo(24, L("homeName", "").ifBlank { null }); Spacer(Modifier.weight(1f))
+                if (kids) Text("kids", color = Color(0xFFFFD400), fontWeight = FontWeight.Black, fontSize = 20.sp, modifier = Modifier.padding(end = 12.dp))
+                Box {
+                    Row(Modifier.clickable { menu = true }.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Avatar(p.avatar, 32.dp); Text("▾", Modifier.padding(start = 4.dp), fontSize = 13.sp)
+                    }
+                    DropdownMenu(menu, { menu = false }, Modifier.background(Color(0xF2141414))) {
+                        DropdownMenuItem({ Text(L("menuManage", "Manage Profiles")) }, { menu = false; manage() }, leadingIcon = { Icon(Icons.Default.Edit, null) })
+                        DropdownMenuItem({ Text(L("menuSwitch", "Switch Profile")) }, { menu = false; switch() }, leadingIcon = { Icon(Icons.Default.Person, null) })
+                        DropdownMenuItem({ Text(L("menuSettings", "Account & Settings")) }, { menu = false; settings() }, leadingIcon = { Icon(Icons.Default.Settings, null) })
+                        HorizontalDivider(color = Color(0xFF333333))
+                        DropdownMenuItem({ Text(L("menuOut", "Sign out"), Modifier.fillMaxWidth(), textAlign = TextAlign.Center) }, { menu = false; switch() })
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                item { Box(Modifier.size(40.dp).clip(CircleShape).clickable(onClick = search), Alignment.Center) { Icon(Icons.Default.Search, null, Modifier.size(26.dp)) } }
+                items(tabs) { c ->
                     val on = c == filter
-                    val w by animateDpAsState(if (on) 24.dp else 0.dp, tween(ms(250)), label = "ul")
-                    Column(Modifier.clickable(remember { MutableInteractionSource() }, null) { filter = c }, horizontalAlignment = Alignment.CenterHorizontally) {
+                    val bgc by animateColorAsState(if (on) Color.White else Color.Transparent, tween(ms(250)), label = "pill")
+                    Box(Modifier.clip(RoundedCornerShape(50)).background(bgc).clickable(remember { MutableInteractionSource() }, null) { filter = c }.padding(horizontal = 18.dp, vertical = 9.dp)) {
                         Text(when (c) { "All" -> L("home", "Home"); "My List" -> L("mylist", "My List"); else -> c }, fontSize = 15.sp,
-                            fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = if (on) Color.White else Color(0xFFB3B3B3), maxLines = 1)
-                        Box(Modifier.padding(top = 3.dp).height(2.dp).width(w).background(ACC))
+                            fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, color = if (on) Color.Black else Color.White, maxLines = 1)
                     }
                 }
             }
@@ -540,7 +570,7 @@ fun Search(st: Store, open: (Video) -> Unit) {
     @Composable fun Suggest() {
         sug.forEach { s -> Text(s, Modifier.fillMaxWidth().clickable { q = s }.padding(vertical = 9.dp, horizontal = 4.dp), color = Color(0xFFB3B3B3), fontSize = 15.sp, maxLines = 1) }
     }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
         val wide = maxWidth >= 600.dp
         if (wide) Row(Modifier.fillMaxSize().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Column(Modifier.width(280.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
